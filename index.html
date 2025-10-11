@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>XROBO 블록 코딩 → BLE 실시간 제어</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Blockly -->
+  <script src="https://unpkg.com/blockly/blockly.min.js"></script>
+  <style>
+    :root{ --pad:10px; --uiScale:1; }
+    *{ box-sizing:border-box; }
+    body{ margin:0; font-family:system-ui, sans-serif; }
+    header{
+      padding:var(--pad); border-bottom:1px solid #eee; background:#fff;
+      position:relative; z-index:10;
+      /* 헤더 자체의 레이아웃 크기는 유지 */
+      height:auto;
+    }
+    /* 헤더 안쪽 컨텐츠만 스케일 */
+    #headerInner{
+      display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+      transform-origin: top left;
+      transform: scale(var(--uiScale));
+    }
+    .group{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .grow{ flex:1 1 auto; }
+    input,button{ font-size:14px; padding:8px 12px; border-radius:10px; }
+    input{ border:1px solid #ddd; }
+    button{ border:0; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.08); }
+    #connect{ background:#2563eb; color:#fff; }
+    #disconnect{ background:#64748b; color:#fff; }
+    #run{ background:#16a34a; color:#fff; }
+    #stop{ background:#ef4444; color:#fff; }
+    #fsBtn{ background:#111827; color:#fff; }
+    .status{ font-size:12px; background:#eee; border-radius:999px; padding:4px 10px; }
+    .ok{ background:#d1fae5; }
+
+    #main{
+      display:flex;
+      height:calc(100vh - 70px);
+      width:100%;
+    }
+
+    /* 왼쪽(코딩) 래퍼: 상대배치로 패널 토글 버튼을 내부 우상단 고정 */
+    #left{
+      position:relative;
+      flex:1 1 60%;
+      min-width:0;
+      height:100%;
+      display:flex;
+    }
+    #blocklyDiv{
+      flex:1 1 auto;
+      min-width:0;
+      height:100%;
+      width:100%;
+    }
+
+    /* 실행창(오른쪽) */
+    #right{
+      flex:1 1 40%;
+      border-left:1px solid #eee;
+      padding:var(--pad);
+      display:flex; flex-direction:column; gap:10px; background:#fff;
+      /* 내용 래퍼만 스케일 */
+    }
+    #rightInner{
+      transform-origin: top right;
+      transform: scale(var(--uiScale));
+    }
+    #log{
+      white-space:pre-wrap; background:#f7f7f7; border-radius:10px; padding:10px;
+      font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size:12px; overflow:auto; height:40vh;
+    }
+    .small{ font-size:12px; color:#666; }
+
+    /* 전체화면에서도 레이아웃 유지 */
+    body.fs-active #main{ height:calc(100vh - 70px); }
+
+    /* 실행창 닫힘 모드: 오른쪽 패널 숨기고 blocklyDiv를 100%로 */
+    body.panel-collapsed #right{ display:none; }
+    body.panel-collapsed #left{ flex:1 1 100%; }
+
+    /* 실행창 토글 버튼: 코딩창(#left) 내부 우상단 고정 + 스케일 */
+    #panelToggle{
+      position:absolute; right:10px; top:10px;
+      z-index: 9999; background:#111827; color:#fff; opacity:0.95;
+      border-radius: 12px; padding:8px 10px;
+      transform-origin: top right;
+      transform: scale(var(--uiScale));
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div id="headerInner">
+      <!-- 좌측: 제목 -->
+      <div class="group"><strong>XROBO 블록 → BLE 제어</strong></div>
+
+      <!-- 가운데: 기기 선택/연결 + 실행/정지 + 상태/전체화면 (정지 옆 배치) -->
+      <div class="group grow">
+        <input id="devName" placeholder="내 기기 이름(예: MX-AB12)" />
+        <button id="connect">🔗 연결</button>
+        <button id="disconnect" disabled>❌ 해제</button>
+        <button id="run" disabled>▶ 실행</button>
+        <button id="stop" disabled>■ 정지</button>
+        <span id="status" class="status">미연결</span>
+        <button id="fsBtn" title="전체화면으로 전환">🖵 전체화면</button>
+      </div>
+    </div>
+  </header>
+
+  <div id="main">
+    <!-- 왼쪽: 코딩 영역(토글 버튼은 내부 우상단에 고정) -->
+    <div id="left">
+      <div id="blocklyDiv"></div>
+      <button id="panelToggle" title="실행창 열기/닫기">▶ 실행창 닫기</button>
+    </div>
+
+    <!-- 오른쪽: 실행창 (내용 스케일용 래퍼 rightInner) -->
+    <div id="right">
+      <div id="rightInner">
+        <div class="small">
+          • HTTPS 또는 localhost에서 Web Bluetooth 동작<br>
+          • MX-01 기본 서비스: <code>0xFFF0</code> (Write/Notify 자동 탐지)<br>
+          • 송신 포맷: <code>M a b</code>, <code>S</code> (대기는 JS에서 처리)
+        </div>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 스크래치풍 카테고리 -->
+  <xml id="toolbox" style="display:none">
+    <category name="이벤트" colour="#f59e0b">
+      <block type="xrobo_start"></block>
+    </category>
+
+    <category name="입력" colour="#06b6d4">
+      <block type="math_number"><field name="NUM">20</field></block>
+      <block type="math_number"><field name="NUM">0</field></block>
+      <block type="math_number"><field name="NUM">1000</field></block>
+    </category>
+
+    <category name="출력" colour="#60a5fa">
+      <block type="motor_wait">
+        <value name="M1"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+        <value name="M2"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+        <value name="DELAY"><shadow type="math_number"><field name="NUM">1000</field></shadow></value>
+      </block>
+      <block type="stop_motors"></block>
+    </category>
+
+    <category name="제어" colour="#10b981">
+      <block type="controls_if"></block>
+      <block type="controls_repeat_ext">
+        <value name="TIMES"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+      </block>
+      <block type="repeat_forever"></block>
+      <block type="wait_seconds">
+        <value name="SEC"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+      </block>
+    </category>
+
+    <category name="연산" colour="#a78bfa">
+      <block type="math_arithmetic"></block>
+      <block type="math_number_property"></block>
+      <block type="math_round"></block>
+      <block type="logic_compare"></block>
+      <block type="logic_boolean"></block>
+    </category>
+
+    <category name="변수" colour="#f97316" custom="VARIABLE"></category>
+    <category name="내블록" colour="#ef4444" custom="PROCEDURE"></category>
+  </xml>
+
+  <script>
+    /* ===== 1) Blockly (Scratch풍 zelos) ===== */
+    const ws = Blockly.inject('blocklyDiv', {
+      toolbox: document.getElementById('toolbox'),
+      renderer: 'zelos',
+      grid: { spacing: 20, length: 3, colour: '#eee', snap: true },
+      zoom: { controls: true, wheel: true }
+    });
+
+    Blockly.defineBlocksWithJsonArray([
+      { "type":"xrobo_start", "message0":"XROBO start", "nextStatement":null, "colour":36, "hat":"cap", "tooltip":"프로그램 시작 블록입니다." },
+      {
+        "type":"motor_wait",
+        "message0":"motor  M1: %1   M2: %2   delay: %3 ms",
+        "args0":[
+          {"type":"input_value","name":"M1","check":"Number"},
+          {"type":"input_value","name":"M2","check":"Number"},
+          {"type":"input_value","name":"DELAY","check":"Number"}
+        ],
+        "inputsInline":true, "previousStatement":null, "nextStatement":null, "colour":210,
+        "tooltip":"모터1/2 속도 설정 후 지정 시간(ms) 대기"
+      },
+      { "type":"stop_motors", "message0":"stop motors", "previousStatement":null, "nextStatement":null, "colour":210, "tooltip":"모든 모터 정지(S)" },
+      {
+        "type":"repeat_forever",
+        "message0":"forever %1 %2",
+        "args0":[ {"type":"input_statement","name":"DO"}, {"type":"input_dummy"} ],
+        "previousStatement":null, "nextStatement":null, "colour":120, "tooltip":"정지 버튼을 누를 때까지 반복"
+      },
+      {
+        "type":"wait_seconds",
+        "message0":"%1 초 기다리기",
+        "args0":[ {"type":"input_value","name":"SEC","check":"Number"} ],
+        "previousStatement":null, "nextStatement":null, "colour":120, "tooltip":"지정한 시간(초) 기다립니다."
+      }
+    ]);
+
+    function blocksToProgram() {
+      const starts = ws.getBlocksByType('xrobo_start', true);
+      if (!starts.length) return [];
+      const prog = [];
+      function collect(b, list){
+        if (!b) return;
+        switch (b.type) {
+          case 'motor_wait': {
+            const m1 = Number(Blockly.JavaScript.valueToCode(b,'M1',Blockly.JavaScript.ORDER_NONE) || 0);
+            const m2 = Number(Blockly.JavaScript.valueToCode(b,'M2',Blockly.JavaScript.ORDER_NONE) || 0);
+            const ms = Number(Blockly.JavaScript.valueToCode(b,'DELAY',Blockly.JavaScript.ORDER_NONE) || 0);
+            list.push({type:'M', args:[m1, m2]});
+            list.push({type:'W', args:[ms]});
+            break;
+          }
+          case 'stop_motors': list.push({type:'S', args:[]}); break;
+          case 'repeat_forever': {
+            const inner=[]; let child=b.getInputTargetBlock('DO');
+            while (child){ collect(child, inner); child = child.getNextBlock(); }
+            list.push({type:'LOOP_INF', body:inner});
+            break;
+          }
+          case 'wait_seconds': {
+            const s = Number(Blockly.JavaScript.valueToCode(b,'SEC',Blockly.JavaScript.ORDER_NONE) || 0);
+            list.push({type:'W', args:[s*1000]});
+            break;
+          }
+        }
+        collect(b.getNextBlock(), list);
+      }
+      collect(starts[0].getNextBlock(), prog);
+      return prog;
+    }
+
+    // 시작 템플릿
+    const startXml = `
+      <xml xmlns="https://developers.google.com/blockly/xml">
+        <block type="xrobo_start" x="30" y="30">
+          <next>
+            <block type="repeat_forever">
+              <statement name="DO">
+                <block type="motor_wait">
+                  <value name="M1"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+                  <value name="M2"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+                  <value name="DELAY"><shadow type="math_number"><field name="NUM">1000</field></shadow></value>
+                  <next>
+                    <block type="motor_wait">
+                      <value name="M1"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+                      <value name="M2"><shadow type="math_number"><field name="NUM">0</field></shadow></value>
+                      <value name="DELAY"><shadow type="math_number"><field name="NUM">1000</field></shadow></value>
+                      <next><block type="stop_motors"></block></next>
+                    </block>
+                  </next>
+                </block>
+              </statement>
+            </block>
+          </next>
+        </block>
+      </xml>`;
+    Blockly.Xml.domToWorkspace(Blockly.utils.xml.textToDom(startXml), ws);
+
+    /* ===== 2) Web Bluetooth ===== */
+    const SERVICE_UUID = 0xFFF0; // MX-01 기본 서비스
+    let bleDevice=null, bleServer=null, bleService=null, writeChar=null, notifyChar=null;
+    const $ = id => document.getElementById(id);
+    const log = m => { const L=$('log'); L.textContent += m+"\n"; L.scrollTop=L.scrollHeight; }
+    const setUI = on => {
+      $('disconnect').disabled=!on; $('run').disabled=!on; $('stop').disabled=!on;
+      $('status').textContent = on ? '연결됨' : '미연결';
+      $('status').className   = on ? 'status ok' : 'status';
+    };
+    const enc = s => new TextEncoder().encode(s);
+
+    async function connectBLE(){
+      if (!navigator.bluetooth) return alert('이 브라우저는 Web Bluetooth 미지원입니다.');
+      const wantName = $('devName').value.trim();
+      try{
+        log('⏳ BLE 스캔…');
+        const dev = await navigator.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [SERVICE_UUID]
+        });
+        if (wantName && dev.name !== wantName) {
+          log(`선택 기기: ${dev.name||'(없음)'} → 입력 이름과 불일치`); alert('팝업에서 본인 기기를 선택하세요!'); return;
+        }
+        bleDevice = dev;
+        bleDevice.addEventListener('gattserverdisconnected', ()=>{ setUI(false); log('🔌 해제됨'); });
+        bleServer  = await bleDevice.gatt.connect();
+        bleService = await bleServer.getPrimaryService(SERVICE_UUID);
+        try{ writeChar = await bleService.getCharacteristic(0xFFF3); }catch(_){}
+        try{ notifyChar= await bleService.getCharacteristic(0xFFF4); }catch(_){}
+        if (!writeChar || notifyChar==null){
+          const chars = await bleService.getCharacteristics();
+          for (const ch of chars){
+            const p = ch.properties;
+            if (!writeChar && (p.write || p.writeWithoutResponse)) writeChar = ch;
+            if (!notifyChar && p.notify) notifyChar = ch;
+          }
+        }
+        if (!writeChar) throw new Error('write 가능한 특성을 찾지 못했습니다.');
+        if (notifyChar){
+          await notifyChar.startNotifications();
+          notifyChar.addEventListener('characteristicvaluechanged', ev=>{
+            const v = new TextDecoder().decode(ev.target.value);
+            log('⬅️ Notify: ' + v);
+          });
+        }
+        setUI(true);
+        log('✅ 연결 성공: ' + (dev.name || '(이름 없음)'));
+      }catch(e){ console.error(e); log('❌ 연결 실패: '+e); setUI(false); }
+    }
+
+    function disconnectBLE(){ try{ bleDevice?.gatt?.disconnect(); }catch(_){} setUI(false); }
+
+    async function sendCmd(s){
+      if (!writeChar) throw new Error('BLE 미연결');
+      await writeChar.writeValue(enc(s+'\n'));
+      log('➡️ ' + s);
+    }
+
+    /* ===== 3) 실행기 ===== */
+    let running = false;
+    async function runProgram(){
+      if (!writeChar) return alert('먼저 BLE 연결!');
+      const prog = blocksToProgram();
+      if (!prog.length) return alert('실행할 블록이 없습니다.\n"XROBO start" 아래에 블록을 연결하세요.');
+      running = true; $('stop').disabled=false;
+
+      async function execList(list){
+        for (let i=0; i<list.length && running; i++){
+          const ins = list[i];
+          if (ins.type==='M'){
+            const [a,b] = ins.args;
+            await sendCmd(`M ${Math.round(a)} ${Math.round(b)}`);
+          } else if (ins.type==='W'){
+            const [ms] = ins.args;
+            await new Promise(r=>setTimeout(r, Math.max(0, ms)));
+          } else if (ins.type==='S'){
+            await sendCmd('S');
+          } else if (ins.type==='LOOP_INF'){
+            while (running){ await execList(ins.body); }
+          }
+        }
+      }
+      try { await execList(prog); }
+      catch(e){ console.error(e); log('⚠️ 실행 오류: '+e); }
+      running=false; $('stop').disabled=true;
+    }
+    function stopProgram(){ running=false; if (writeChar) sendCmd('S').catch(()=>{}); }
+
+    /* ===== 4) 전체화면 토글 ===== */
+    const fsBtn = document.getElementById('fsBtn');
+    async function enterFullscreen() { const el = document.documentElement; if (el.requestFullscreen) await el.requestFullscreen(); }
+    async function exitFullscreen() { if (document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen(); }
+    fsBtn.onclick = async () => { if (document.fullscreenElement) { await exitFullscreen(); } else { await enterFullscreen(); } queueResize(); };
+    document.addEventListener('fullscreenchange', () => {
+      const active = !!document.fullscreenElement;
+      document.body.classList.toggle('fs-active', active);
+      fsBtn.textContent = active ? '나가기' : '🖵 전체화면';
+      fsBtn.title = active ? '전체화면 종료' : '전체화면으로 전환';
+      queueResize();
+    });
+
+    /* ===== 5) 실행창 열/닫 토글 (코딩창 우상단 고정) ===== */
+    const panelToggle = document.getElementById('panelToggle');
+    function updatePanelBtn(){
+      const closed = document.body.classList.contains('panel-collapsed');
+      panelToggle.textContent = closed ? '◀ 실행창 열기' : '▶ 실행창 닫기';
+      panelToggle.title = closed ? '실행창 열기' : '실행창 닫기';
+    }
+    panelToggle.onclick = () => {
+      document.body.classList.toggle('panel-collapsed');
+      updatePanelBtn();
+      queueResize();
+    };
+    updatePanelBtn();
+
+    /* ===== 6) UI ↔ Blockly 줌 동기화 =====
+       - Blockly의 + / - / 마우스휠 줌 시 UI도 같은 배율로 스케일
+       - 헤더(#headerInner), 오른쪽 내용(#rightInner), 패널 토글(#panelToggle)
+    */
+    function applyUiScale(scale){
+      // 너무 작거나 크게 보이는 것 방지 (필요 시 조절)
+      const clamped = Math.max(0.8, Math.min(1.6, scale));
+      document.documentElement.style.setProperty('--uiScale', clamped);
+    }
+    function syncUiScaleFromWorkspace(){
+      applyUiScale(ws.getScale());
+    }
+    ws.addChangeListener((ev)=>{
+      // Blockly.Events.UI with element === 'zoom'
+      if (ev && ev.type === Blockly.Events.UI && ev.element === 'zoom') {
+        syncUiScaleFromWorkspace();
+      }
+    });
+
+    /* ===== 7) Blockly 리사이즈 헬퍼 ===== */
+    let resizeTimer = null;
+    function queueResize(){
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(()=>Blockly.svgResize(ws), 60);
+    }
+    window.addEventListener('resize', queueResize);
+    // 초기 동기화
+    syncUiScaleFromWorkspace();
+    queueResize();
+
+    /* ===== 8) 버튼 바인딩 ===== */
+    document.getElementById('connect').onclick = connectBLE;
+    document.getElementById('disconnect').onclick = disconnectBLE;
+    document.getElementById('run').onclick = runProgram;
+    document.getElementById('stop').onclick = stopProgram;
+
+    setUI(false);
+  </script>
+</body>
+</html>
