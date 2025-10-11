@@ -1,0 +1,450 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>XROBO 블록 코딩 → BLE + 코드뷰</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<script src="https://unpkg.com/blockly/blockly.min.js"></script>
+<style>
+  :root{ --pad:10px; --uiScale:1; --headerBase:70; }
+  *{ box-sizing:border-box; } body{ margin:0; font-family:system-ui, sans-serif; }
+
+  /* ── 헤더 ───────────────────────────────────────────── */
+  header{ padding:var(--pad); border-bottom:1px solid #eee; background:#fff; position:relative; z-index:10;
+          height: calc( var(--headerBase) * var(--uiScale) * 1px ); }
+  #headerInner{ display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+                transform-origin:top left; transform:scale(var(--uiScale)); }
+  .row{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; } .grow{ flex:1 1 auto; }
+  input,button{ font-size:14px; padding:8px 12px; border-radius:10px; }
+  input{ border:1px solid #ddd; }
+  button{ border:0; cursor:pointer; box-shadow:0 2px 8px rgba(0,0,0,.08); transition:background .15s; }
+  #connectToggle{ background:#2563eb; color:#fff; }      /* 연결/해제 토글 */
+  #runToggle{ background:#16a34a; color:#fff; }          /* 실행/정지 토글(정지 시 빨강) */
+  #fsBtn{ background:#111827; color:#fff; }
+
+  /* 상태 점(텍스트 내장) */
+  .state { display:inline-flex; align-items:center; gap:8px; font-size:12px; }
+  .badgeDot{
+    width:22px; height:22px; border-radius:50%;
+    display:inline-flex; align-items:center; justify-content:center;
+    font-weight:700; color:#fff; user-select:none;
+    box-shadow:0 0 0 4px rgba(0,0,0,.06) inset;
+  }
+  .badgeDot.on  { background:#3b82f6; } /* 파랑 */
+  .badgeDot.off { background:#ef4444; } /* 빨강 */
+
+  /* ── 본문 레이아웃 ──────────────────────────────────── */
+  #main{ display:flex; height: calc(100vh - (var(--headerBase) * var(--uiScale) * 1px)); width:100%; }
+  #left{ position:relative; flex:1 1 auto; min-width:0; height:100%; display:flex; }
+  #blocklyDiv{ flex:1 1 auto; min-width:0; height:100%; width:100%; }
+
+  /* 오른쪽 패널: 위(코드), 아래(로그) */
+  #right{
+    flex:0 0 40%; display:flex; flex-direction:column; background:#fff;
+    margin:8px 8px 8px 0; border:1px solid #e5e7eb; border-left:3px solid #60a5fa;
+    border-radius:12px 0 0 12px; box-shadow:0 2px 10px rgba(0,0,0,.04); overflow:hidden;
+  }
+  /* 코드뷰: 아주 밝은 회색 */
+  #rightTop{
+    flex:3 1 0; border-bottom:1px solid #e5e7eb;
+    background:#f5f7fa; color:#111827;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size:13px; line-height:1.45; padding:12px; overflow:auto; white-space:pre; tab-size:2;
+  }
+  /* 로그: 검은색 */
+  #rightBottom{ flex:1 1 0; padding:var(--pad); background:#0b0f14; color:#d1e4ff; }
+  #log{
+    height:100%; white-space:pre-wrap; background:#0b0f14; border:1px solid #1f2937; border-radius:8px; padding:10px;
+    font-family:ui-monospace, Menlo, Consolas, monospace; font-size:12px; overflow:auto; color:#d1e4ff;
+  }
+  .small{ font-size:12px; color:#9ca3af; }
+
+  body.fs-active #main{ height: calc(100vh - (var(--headerBase) * var(--uiScale) * 1px)); }
+  body.panel-collapsed #right{ display:none; } body.panel-collapsed #left{ flex:1 1 100%; }
+
+  /* 실행창 토글 */
+  #panelToggle{
+    position:absolute; right:10px; top:10px; z-index:9999;
+    background:#111827; color:#fff; border-radius:12px; padding:8px 10px;
+    transform-origin:top right; transform:scale(var(--uiScale));
+  }
+
+  /* Blockly 기본 +/−/리셋 & 휴지통 표시 유지 */
+  .blocklyZoom,.blocklyTrash{ display:block !important; }
+</style>
+</head>
+<body>
+  <!-- 헤더 -->
+  <header id="appHeader">
+    <div id="headerInner">
+      <div class="row"><strong>XROBO 블록 → BLE + 코드뷰</strong></div>
+      <div class="row grow">
+        <input id="devName" placeholder="내 기기 이름(예: MX-AB12)" />
+        <button id="connectToggle">연결</button>
+        <button id="runToggle" disabled>▶ 실행</button>
+        <span class="state"><span id="statusDot" class="badgeDot off">off</span></span>
+        <button id="fsBtn" title="전체화면으로 전환">🖵 전체화면</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 본문 -->
+  <div id="main">
+    <div id="left">
+      <div id="blocklyDiv"></div>
+      <button id="panelToggle" title="실행창 열기/닫기">▶ 실행창 닫기</button>
+    </div>
+
+    <div id="right">
+      <div id="rightTop"><!-- C/Arduino 코드뷰 --></div>
+      <div id="rightBottom">
+        <div class="small">실행 로그</div>
+        <div id="log"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 툴박스 -->
+  <xml id="toolbox" style="display:none">
+    <category name="이벤트" colour="#f59e0b">
+      <block type="xrobo_start"></block>
+    </category>
+
+    <category name="입력" colour="#06b6d4">
+      <block type="in_xkeypad"><field name="PIN">IN1</field><field name="BTN">B1</field></block>
+      <block type="in_ir_dist"><field name="PIN">IN1</field>
+        <value name="DIST"><shadow type="math_number"><field name="NUM">10</field></shadow></value></block>
+      <block type="in_touch"><field name="PIN">IN1</field></block>
+    </category>
+
+    <category name="출력" colour="#60a5fa">
+      <block type="motor12_dd"><field name="M1">20</field><field name="M2">20</field><field name="MS">500</field></block>
+      <block type="motor12_in">
+        <value name="M1"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+        <value name="M2"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+        <value name="MS"><shadow type="math_number"><field name="NUM">500</field></shadow></value>
+      </block>
+
+      <block type="motor34_dd"><field name="M3">20</field><field name="M4">20</field><field name="MS">500</field></block>
+      <block type="motor34_in">
+        <value name="M3"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+        <value name="M4"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
+        <value name="MS"><shadow type="math_number"><field name="NUM">500</field></shadow></value>
+      </block>
+
+      <!-- 서보: 0~180(5도 간격) 드롭다운 + 숫자 입력형 -->
+      <block type="servo_dd"><field name="OUT">OUT1</field><field name="ANG">90</field></block>
+      <block type="servo_in"><field name="OUT">OUT1</field>
+        <value name="ANG"><shadow type="math_number"><field name="NUM">90</field></shadow></value></block>
+      <block type="servo_slow"><field name="OUT">OUT1</field>
+        <value name="DELAY"><shadow type="math_number"><field name="NUM">5</field></shadow></value>
+        <value name="ANG"><shadow type="math_number"><field name="NUM">90</field></shadow></value></block>
+
+      <block type="melody"><field name="PITCH">C4</field>
+        <value name="DUR"><shadow type="math_number"><field name="NUM">200</field></shadow></value>
+        <value name="WAIT"><shadow type="math_number"><field name="NUM">250</field></shadow></value></block>
+
+      <block type="led_ctrl"><field name="TGT">OUT1</field><field name="MODE">BRIGHT</field><field name="VAL">10</field></block>
+    </category>
+
+    <category name="제어" colour="#10b981">
+      <block type="repeat_forever"></block>
+      <block type="controls_repeat_ext"><value name="TIMES"><shadow type="math_number"><field name="NUM">10</field></shadow></value></block>
+      <block type="controls_if"></block>
+      <block type="controls_if"><mutation else="1"></mutation></block>
+      <block type="wait_seconds"><value name="SEC"><shadow type="math_number"><field name="NUM">1</field></shadow></value></block>
+      <block type="control_wait_until"></block>
+      <block type="control_repeat_until"></block>
+    </category>
+
+    <category name="연산" colour="#a78bfa">
+      <block type="math_arithmetic"><value name="A"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="B"><shadow type="math_number"><field name="NUM">2</field></shadow></value></block>
+      <block type="logic_compare"><value name="A"><shadow type="math_number"><field name="NUM">10</field></shadow></value>
+        <value name="B"><shadow type="math_number"><field name="NUM">5</field></shadow></value></block>
+      <block type="logic_operation"></block>
+      <block type="logic_negate"></block>
+      <block type="math_random_int"><value name="FROM"><shadow type="math_number"><field name="NUM">1</field></shadow></value>
+        <value name="TO"><shadow type="math_number"><field name="NUM">10</field></shadow></value></block>
+      <block type="math_number"><field name="NUM">20</field></block>
+      <block type="math_number"><field name="NUM">500</field></block>
+    </category>
+
+    <category name="변수" colour="#f97316" custom="VARIABLE"></category>
+    <category name="내블록" colour="#ef4444" custom="PROCEDURE"></category>
+  </xml>
+
+  <script>
+    /* 0) Zelos 해트 강제 렌더러 */
+    class XroboZelosProvider extends Blockly.zelos.ConstantProvider {
+      constructor(){ super(); this.ADD_START_HATS = true; }
+    }
+    class XroboZelosRenderer extends Blockly.zelos.Renderer {
+      constructor(){ super('xrobo_zelos'); }
+      makeConstants_(){ return new XroboZelosProvider(); }
+    }
+    Blockly.blockRendering.register('xrobo_zelos', XroboZelosRenderer);
+
+    /* 1) 해트 on 테마 */
+    const XroboTheme = Blockly.Theme.defineTheme('xrobo_theme', {
+      base: Blockly.Themes.Zelos,
+      componentStyles: { startHats: true }
+    });
+
+    /* 2) Blockly 주입 */
+    const ws = Blockly.inject('blocklyDiv', {
+      toolbox: document.getElementById('toolbox'),
+      renderer: 'xrobo_zelos',   // ★ 커스텀 Zelos
+      theme: XroboTheme,
+      grid: { spacing:20, length:3, colour:'#eee', snap:true },
+      zoom: { controls:true, wheel:true }
+    });
+
+    /* 3) 블록 정의 */
+    const PINS_IN  = [["IN1","IN1"],["IN2","IN2"],["IN3","IN3"],["IN4","IN4"]];
+    const PINS_OUT = [["OUT1","OUT1"],["OUT2","OUT2"],["OUT3","OUT3"],["OUT4","OUT4"],["OUT5","OUT5"],["OUT6","OUT6"],["OUT7","OUT7"],["OUT8","OUT8"]];
+    const KEYS_B   = [["B1","B1"],["B2","B2"],["B3","B3"],["B4","B4"],["B5","B5"]];
+    const SPEEDS   = Array.from({length:41},(_,i)=>20-i).map(v=>[String(v),String(v)]);
+    const TIMES100 = Array.from({length:10},(_,i)=>(100*(i+1))).map(v=>[String(v),String(v)]);
+    const ANG_5    = Array.from({length:37},(_,i)=>i*5).map(v=>[String(v),String(v)]);
+    const LED_TGT  = [...PINS_OUT,["CPU","CPU"]];
+    const LED_MODE = [["밝기","BRIGHT"],["숨쉬기","BREATHE"]];
+    const LED_VALS = Array.from({length:20},(_,i)=>[String(i),String(i)]);
+    const PITCHES  = (()=>{
+      const KR=["도","레","미","파","솔","라","시"], EN=["C","D","E","F","G","A","B"], L=[];
+      for(let o=4;o<=6;o++) for(let i=0;i<7;i++) L.push([`${KR[i]}${o}`,`${EN[i]}${o}`]); return L;
+    })();
+
+    Blockly.defineBlocksWithJsonArray([
+      { "type":"xrobo_start", "message0":"XROBO start", "nextStatement":null, "colour":36, "hat":"cap" },
+
+      { "type":"in_xkeypad", "message0":"X 키패드 핀 %1 버튼 %2",
+        "args0":[ {"type":"field_dropdown","name":"PIN","options":PINS_IN}, {"type":"field_dropdown","name":"BTN","options":KEYS_B} ],
+        "output":"Boolean","colour":198 },
+      { "type":"in_ir_dist", "message0":"적외선센서 핀 %1 거리 %2 이내",
+        "args0":[ {"type":"field_dropdown","name":"PIN","options":PINS_IN}, {"type":"input_value","name":"DIST","check":"Number"} ],
+        "output":"Boolean","colour":198 },
+      { "type":"in_touch", "message0":"접촉센서 핀 %1 눌림",
+        "args0":[ {"type":"field_dropdown","name":"PIN","options":PINS_IN} ],
+        "output":"Boolean","colour":198 },
+
+      { "type":"motor12_dd", "message0":"모터 M1 %1  M2 %2  시간 %3 ms",
+        "args0":[ {"type":"field_dropdown","name":"M1","options":SPEEDS}, {"type":"field_dropdown","name":"M2","options":SPEEDS}, {"type":"field_dropdown","name":"MS","options":TIMES100} ],
+        "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":210 },
+      { "type":"motor12_in", "message0":"모터 M1 %1  M2 %2  시간 %3 ms",
+        "args0":[ {"type":"input_value","name":"M1","check":"Number"}, {"type":"input_value","name":"M2","check":"Number"}, {"type":"input_value","name":"MS","check":"Number"} ],
+        "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":210 },
+
+      { "type":"motor34_dd", "message0":"모터 M3 %1  M4 %2  시간 %3 ms",
+        "args0":[ {"type":"field_dropdown","name":"M3","options":SPEEDS}, {"type":"field_dropdown","name":"M4","options":SPEEDS}, {"type":"field_dropdown","name":"MS","options":TIMES100} ],
+        "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":210 },
+      { "type":"motor34_in", "message0":"모터 M3 %1  M4 %2  시간 %3 ms",
+        "args0":[ {"type":"input_value","name":"M3","check":"Number"}, {"type":"input_value","name":"M4","check":"Number"}, {"type":"input_value","name":"MS","check":"Number"} ],
+        "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":210 },
+
+      { "type":"servo_dd", "message0":"서보모터 %1 각도 %2°",
+        "args0":[ {"type":"field_dropdown","name":"OUT","options":PINS_OUT}, {"type":"field_dropdown","name":"ANG","options":ANG_5} ],
+        "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":30 },
+      { "type":"servo_in", "message0":"서보모터 %1 각도 %2°",
+        "args0":[ {"type":"field_dropdown","name":"OUT","options":PINS_OUT}, {"type":"input_value","name":"ANG","check":"Number"} ],
+        "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":30 },
+      { "type":"servo_slow", "message0":"슬로우 서보 %1 지연 %2 ms 각도 %3°",
+        "args0":[ {"type":"field_dropdown","name":"OUT","options":PINS_OUT}, {"type":"input_value","name":"DELAY","check":"Number"}, {"type":"input_value","name":"ANG","check":"Number"} ],
+        "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":30 },
+
+      { "type":"melody", "message0":"멜로디 음높이 %1 소리시간 %2 ms 대기시간 %3 ms",
+        "args0":[ {"type":"field_dropdown","name":"PITCH","options":PITCHES}, {"type":"input_value","name":"DUR","check":"Number"}, {"type":"input_value","name":"WAIT","check":"Number"} ],
+        "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":300 },
+
+      { "type":"led_ctrl", "message0":"LED %1 모드 %2 값 %3",
+        "args0":[ {"type":"field_dropdown","name":"TGT","options":LED_TGT}, {"type":"field_dropdown","name":"MODE","options":LED_MODE}, {"type":"field_dropdown","name":"VAL","options":LED_VALS} ],
+        "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":330 },
+
+      { "type":"repeat_forever", "message0":"forever %1 %2",
+        "args0":[ {"type":"input_statement","name":"DO"}, {"type":"input_dummy"} ],
+        "previousStatement":null, "nextStatement":null, "colour":120 },
+
+      { "type":"wait_seconds", "message0":"%1 초 기다리기",
+        "args0":[ {"type":"input_value","name":"SEC","check":"Number"} ],
+        "previousStatement":null, "nextStatement":null, "inputsInline":true, "colour":120 },
+
+      { "type":"control_wait_until", "message0":"다음까지 기다리기 %1",
+        "args0":[ {"type":"input_value","name":"COND","check":"Boolean"} ],
+        "previousStatement":null,"nextStatement":null,"colour":120 },
+
+      { "type":"control_repeat_until", "message0":"다음까지 반복 %1 %2 %3",
+        "args0":[ {"type":"input_value","name":"COND","check":"Boolean"}, {"type":"input_statement","name":"DO"}, {"type":"input_dummy"} ],
+        "previousStatement":null,"nextStatement":null,"colour":120 }
+    ]);
+
+    /* 4) 블록 → 실행 시퀀스 (XROBO start 없을 때도 작동) */
+    const num = (b,n,d=0)=>Number(Blockly.JavaScript.valueToCode(b,n,Blockly.JavaScript.ORDER_NONE) ?? d);
+    function firstExecutableTopStack(){
+      const tops = ws.getTopBlocks(true);
+      for(const b of tops){
+        // 값(둥근) 블록이 아닌 '문장형' 블록 체인을 선택
+        if (!b.outputConnection && (b.nextConnection || b.statementInputCount > 0 || b.type === 'xrobo_start')){
+          return b;
+        }
+      }
+      return null;
+    }
+    function blocksToProgram(){
+      const starts=ws.getBlocksByType('xrobo_start',true);
+      let entry = null, next = null;
+      if(starts.length){ entry = starts[0]; next = entry.getNextBlock(); }
+      else { entry = firstExecutableTopStack(); next = entry; }
+      if(!entry) return []; // 아무 문장형 스택이 없으면 빈 프로그램
+
+      const prog=[];
+      (function walk(b,list){
+        if(!b) return;
+        switch(b.type){
+          case 'motor12_dd':{ const v1=+b.getFieldValue('M1'),v2=+b.getFieldValue('M2'),ms=+b.getFieldValue('MS'); list.push({type:'CMD',s:`M12 ${v1} ${v2} ${ms}`}); list.push({type:'W',args:[ms]}); break; }
+          case 'motor12_in':{ const v1=num(b,'M1',0),v2=num(b,'M2',0),ms=num(b,'MS',0); list.push({type:'CMD',s:`M12 ${Math.round(v1)} ${Math.round(v2)} ${Math.round(ms)}`}); list.push({type:'W',args:[ms]}); break; }
+          case 'motor34_dd':{ const v3=+b.getFieldValue('M3'),v4=+b.getFieldValue('M4'),ms=+b.getFieldValue('MS'); list.push({type:'CMD',s:`M34 ${v3} ${v4} ${ms}`}); list.push({type:'W',args:[ms]}); break; }
+          case 'motor34_in':{ const v3=num(b,'M3',0),v4=num(b,'M4',0),ms=num(b,'MS',0); list.push({type:'CMD',s:`M34 ${Math.round(v3)} ${Math.round(v4)} ${Math.round(ms)}`}); list.push({type:'W',args:[ms]}); break; }
+          case 'servo_dd'  :{ const out=b.getFieldValue('OUT'),ang=+b.getFieldValue('ANG'); list.push({type:'CMD',s:`SV ${out} ${Math.round(ang)}`}); break; }
+          case 'servo_in'  :{ const out=b.getFieldValue('OUT'),ang=num(b,'ANG',90); list.push({type:'CMD',s:`SV ${out} ${Math.round(ang)}`}); break; }
+          case 'servo_slow':{ const out=b.getFieldValue('OUT'),del=num(b,'DELAY',5),ang=num(b,'ANG',90); list.push({type:'CMD',s:`SVS ${out} ${Math.round(del)} ${Math.round(ang)}`}); break; }
+          case 'melody'    :{ const p=b.getFieldValue('PITCH'),dur=num(b,'DUR',200),wait=num(b,'WAIT',250); list.push({type:'CMD',s:`MEL ${p} ${Math.round(dur)} ${Math.round(wait)}`}); list.push({type:'W',args:[wait]}); break; }
+          case 'led_ctrl'  :{ const t=b.getFieldValue('TGT'),m=b.getFieldValue('MODE'),v=+b.getFieldValue('VAL'); list.push({type:'CMD',s:`LED ${t} ${m} ${v}`}); break; }
+          case 'repeat_forever':{
+            const inner=[]; let c=b.getInputTargetBlock('DO');
+            while(c){ walk(c,inner); c=c.getNextBlock(); }
+            list.push({type:'LOOP_INF',body:inner}); break; }
+          case 'wait_seconds':{ const s=num(b,'SEC',1); list.push({type:'W',args:[s*1000]}); break; }
+          case 'control_wait_until':{ list.push({type:'WAIT_UNTIL'}); break; }
+          case 'control_repeat_until':{
+            const inner=[]; let c=b.getInputTargetBlock('DO'); while(c){ walk(c,inner); c=c.getNextBlock(); }
+            list.push({type:'REPEAT_UNTIL',body:inner}); break; }
+        }
+        walk(b.getNextBlock(),list);
+      })(next,prog);
+      return prog;
+    }
+
+    /* 5) 코드뷰: CMD는 send만, W에서만 delay (디바운스 갱신) */
+    function programToC(prog){
+      const out=[];
+      out.push('void setup() {');
+      out.push('  // TODO: 핀 초기화');
+      out.push('}');
+      out.push('');
+      out.push('void loop() {');
+      const emit=(list,indent='  ')=>{
+        for(const ins of list){
+          if(ins.type==='CMD'){ out.push(`${indent}send("${ins.s}");`); }
+          else if(ins.type==='W'){ out.push(`${indent}delay(${ins.args[0]});`); }
+          else if(ins.type==='LOOP_INF'){ out.push(`${indent}while(true){`); emit(ins.body,indent+'  '); out.push(`${indent}}`); }
+          else if(ins.type==='WAIT_UNTIL'){ out.push(`${indent}// wait until (조건 구현 필요)`); out.push(`${indent}delay(50);`); }
+          else if(ins.type==='REPEAT_UNTIL'){ out.push(`${indent}// repeat until (간단 폴링 예제)`); out.push(`${indent}for(int guard=0; guard<200; ++guard){`); emit(ins.body,indent+'  '); out.push(`${indent}  delay(50);`); out.push(`${indent}}`); }
+        }
+      };
+      emit(prog,'  ');
+      out.push('}');
+      return out.join('\n');
+    }
+    const codeView=document.getElementById('rightTop');
+    let refreshTimer=null;
+    function refreshCodeDebounced(){
+      clearTimeout(refreshTimer);
+      refreshTimer=setTimeout(()=>{
+        const prog=blocksToProgram();
+        codeView.textContent = programToC(prog);
+      },100);
+    }
+    ws.addChangeListener(refreshCodeDebounced);
+    refreshCodeDebounced();
+
+    /* 6) BLE & 실행 토글 (연결/해제, 실행/정지) */
+    const SERVICE_UUID=0xFFF0;
+    let bleDevice=null,bleServer=null,bleService=null,writeChar=null,notifyChar=null;
+    const $=id=>document.getElementById(id), log=m=>{ const L=$('log'); L.textContent+=m+"\n"; L.scrollTop=L.scrollHeight; };
+    let isConnected=false, isRunning=false;
+    const btnConnect=document.getElementById('connectToggle');
+    const btnRun=document.getElementById('runToggle');
+    const dot=document.getElementById('statusDot');
+    const enc=s=>new TextEncoder().encode(s);
+
+    function setConnected(v){ isConnected=v; btnConnect.textContent=v?'해제':'연결'; btnRun.disabled=!v; dot.classList.toggle('on',v); dot.classList.toggle('off',!v); dot.textContent=v?'on':'off'; if(!v) setRunning(false); }
+    function setRunning(v){ isRunning=v; btnRun.textContent=v?'■ 정지':'▶ 실행'; btnRun.style.background=v?'#ef4444':'#16a34a'; }
+    setConnected(false); setRunning(false);
+
+    async function sendCmd(s){ if(!writeChar) throw new Error('BLE 미연결'); await writeChar.writeValue(enc(s+'\n')); log('➡️ '+s); }
+
+    async function connectBLE(){
+      if(!navigator.bluetooth) return alert('이 브라우저는 Web Bluetooth 미지원입니다.');
+      const want=$('devName').value.trim();
+      try{
+        log('⏳ BLE 스캔…');
+        const dev=await navigator.bluetooth.requestDevice({acceptAllDevices:true,optionalServices:[SERVICE_UUID]});
+        if(want && dev.name!==want){ log(`선택: ${dev.name||'(없음)'} → 입력과 불일치`); alert('팝업에서 본인 기기를 선택!'); return; }
+        bleDevice=dev; bleDevice.addEventListener('gattserverdisconnected',()=>{ setConnected(false); log('🔌 해제됨'); });
+        bleServer=await bleDevice.gatt.connect(); bleService=await bleServer.getPrimaryService(SERVICE_UUID);
+        try{ writeChar=await bleService.getCharacteristic(0xFFF3);}catch(_){}
+        try{ notifyChar=await bleService.getCharacteristic(0xFFF4);}catch(_){}
+        if(!writeChar||notifyChar==null){
+          const cs=await bleService.getCharacteristics();
+          for(const ch of cs){ const p=ch.properties; if(!writeChar&&(p.write||p.writeWithoutResponse)) writeChar=ch; if(!notifyChar&&p.notify) notifyChar=ch; }
+        }
+        if(!writeChar) throw new Error('write 특성을 찾지 못했습니다.');
+        if(notifyChar){ await notifyChar.startNotifications(); notifyChar.addEventListener('characteristicvaluechanged',ev=>{ const v=new TextDecoder().decode(ev.target.value); log('⬅️ '+v);});}
+        setConnected(true); log('✅ 연결: '+(dev.name||'(이름 없음)'));
+      }catch(e){ console.error(e); log('❌ 연결 실패: '+e); setConnected(false); }
+    }
+    function disconnectBLE(){ try{ bleDevice?.gatt?.disconnect(); }catch(_){ } setConnected(false); }
+    btnConnect.onclick=()=>{ isConnected?disconnectBLE():connectBLE(); };
+
+    function blocksForRun(){ return blocksToProgram(); }
+
+    btnRun.onclick=async ()=>{
+      if(!isRunning){
+        if(!writeChar){ alert('먼저 BLE 연결!'); return; }
+        setRunning(true);
+        const prog=blocksForRun(); if(!prog.length){ alert('실행할 블록이 없습니다.\n"XROBO start" 또는 최상단 스택을 배치하세요.'); setRunning(false); return; }
+        let running=true;
+        const runLoop=async(list)=>{
+          for(let i=0;i<list.length && running;i++){
+            const ins=list[i];
+            if(ins.type==='CMD'){ await sendCmd(ins.s); }
+            else if(ins.type==='W'){ const [ms]=ins.args; await new Promise(r=>setTimeout(r, Math.max(0,ms))); }
+            else if(ins.type==='WAIT_UNTIL'){ await new Promise(r=>setTimeout(r,50)); i--; }
+            else if(ins.type==='REPEAT_UNTIL'){ let guard=0; while(running && guard<200){ await runLoop(ins.body); await new Promise(r=>setTimeout(r,50)); guard++; } }
+            else if(ins.type==='LOOP_INF'){ while(running){ await runLoop(ins.body); } }
+          }
+        };
+        try{ await runLoop(prog); }catch(e){ console.error(e); log('⚠️ 실행 오류: '+e); }
+        setRunning(false);
+      }else{
+        setRunning(false);
+        try{ if(writeChar) await sendCmd('S'); }catch(_){}
+      }
+    };
+
+    /* 전체화면/패널/스케일 */
+    const fsBtn=document.getElementById('fsBtn');
+    async function enterFS(){ const el=document.documentElement; if(el.requestFullscreen) await el.requestFullscreen(); }
+    async function exitFS(){ if(document.fullscreenElement && document.exitFullscreen) await document.exitFullscreen(); }
+    fsBtn.onclick=async()=>{ if(document.fullscreenElement) await exitFS(); else await enterFS(); queueResize(); };
+    document.addEventListener('fullscreenchange',()=>{ const a=!!document.fullscreenElement; document.body.classList.toggle('fs-active',a);
+      fsBtn.textContent=a?'나가기':'🖵 전체화면'; fsBtn.title=a?'전체화면 종료':'전체화면으로 전환'; queueResize(); });
+
+    const panelToggle=document.getElementById('panelToggle');
+    function updatePanelBtn(){ const c=document.body.classList.contains('panel-collapsed'); panelToggle.textContent=c?'◀ 실행창 열기':'▶ 실행창 닫기'; panelToggle.title=c?'실행창 열기':'실행창 닫기'; }
+    panelToggle.onclick=()=>{ document.body.classList.toggle('panel-collapsed'); updatePanelBtn(); queueResize(); }; updatePanelBtn();
+
+    const headerEl=document.getElementById('appHeader'), mainEl=document.getElementById('main');
+    const HEADER_BASE=headerEl.getBoundingClientRect().height||70; document.documentElement.style.setProperty('--headerBase',HEADER_BASE);
+    const clamp=(v,min,max)=>Math.max(min,Math.min(max,v));
+    function applyUiScale(scale){ const s=clamp(scale,0.6,1.8); document.documentElement.style.setProperty('--uiScale',s);
+      headerEl.style.height=(HEADER_BASE*s)+'px'; mainEl.style.height=`calc(100vh - ${Math.round(HEADER_BASE*s)}px)`; }
+    function syncUiScale(){ applyUiScale(ws.getScale()); queueResize(); }
+    let resizeTimer=null; function queueResize(){ clearTimeout(resizeTimer); resizeTimer=setTimeout(()=>Blockly.svgResize(ws),60); }
+    window.addEventListener('resize', queueResize);
+    let lastScale=ws.getScale(); ws.addChangeListener(ev=>{ if(ev && ev.type===Blockly.Events.UI && ev.element==='zoom'){ const cur=ws.getScale(); if(cur!==lastScale){ lastScale=cur; syncUiScale(); } } });
+    setInterval(()=>{ const cur=ws.getScale(); if(cur!==lastScale){ lastScale=cur; syncUiScale(); } },120);
+    syncUiScale();
+  </script>
+</body>
+</html>
