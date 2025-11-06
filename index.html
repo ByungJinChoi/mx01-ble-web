@@ -319,7 +319,7 @@ const ws = Blockly.inject('blocklyDiv', {
   zoom: { controls:true, wheel:true }
 });
 
-/* ================= 블록 정의(원본 + LED만 교체) ================= */
+/* ================= 블록 정의(원본 + LED만 교체 + 누락된 제어 블록 복구) ================= */
 const PINS_IN=[["IN1","IN1"],["IN2","IN2"],["IN3","IN3"],["IN4","IN4"]];
 const PINS_OUT=[["OUT1","OUT1"],["OUT2","OUT2"],["OUT3","OUT3"],["OUT4","OUT4"],["OUT5","OUT5"],["OUT6","OUT6"],["OUT7","OUT7"],["OUT8","OUT8"]];
 const KEYS_B=[["B1","B1"],["B2","B2"],["B3","B3"],["B4","B4"],["B5","B5"]];
@@ -383,6 +383,23 @@ Blockly.defineBlocksWithJsonArray([
     "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":330
   },
 
+  /* ★ 제어 블록 (원본에서 누락된 부분 복구) */
+  { "type":"repeat_forever","message0":"forever %1 %2",
+    "args0":[{"type":"input_statement","name":"DO"},{"type":"input_dummy"}],
+    "previousStatement":null,"nextStatement":null,"colour":120 },
+
+  { "type":"wait_seconds","message0":"%1 초 기다리기",
+    "args0":[{"type":"input_value","name":"SEC","check":"Number"}],
+    "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":120 },
+
+  { "type":"control_wait_until","message0":"다음까지 기다리기 %1",
+    "args0":[{"type":"input_value","name":"COND","check":"Boolean"}],
+    "previousStatement":null,"nextStatement":null,"colour":120 },
+
+  { "type":"control_repeat_until","message0":"다음까지 반복 %1 %2 %3",
+    "args0":[{"type":"input_value","name":"COND","check":"Boolean"},{"type":"input_statement","name":"DO"},{"type":"input_dummy"}],
+    "previousStatement":null,"nextStatement":null,"colour":120 },
+
   /* ★ 멀티 서보 */
   {
     "type":"multi_servo",
@@ -390,7 +407,7 @@ Blockly.defineBlocksWithJsonArray([
     "args0":[
       { "type":"field_label_serializable", "name":"COUNT", "text":"0" },
       { "type":"field_image", "name":"CFG",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0 0 1 1.46-.419l.21-1.146A1 1 0 0 1 15.52 2h2.96a1 1 0 0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0 0 1 1.33.427l1.48 2.564a1 1 0 0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0 0 1 .255 1.287l-1.48 2.564a1 1 0 0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0 0 1 18.48 22h-2.96a1 1 0 0 1-.986-.836l-.21-1.145a8.9 8.9 0  0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0  0 1 .255-1.287l.94-.767A7.91 7.91 0  0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0 1-.255-1.287zM17 9a3 3 0  1 0 0 6a3 3 0 0 0 0-6' /></svg>",
+        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0 0 1 1.46-.419l.21-1.146A1 1 0  0 1 15.52 2h2.96a1 1 0  0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0  0 1 1.33.427l1.48 2.564a1 1 0  0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0  0 1 .255 1.287l-1.48 2.564a1 1 0  0 1-1.33.427l-1.028-.515a8.9 8.9 0  0 1-1.46.52l-.21 1.145A1 1 0  0 1 18.48 22h-2.96a1 1 0  0 1-.986-.836l-.21-1.145a8.9 8.9 0  0 1-1.459-.419l-1.028.514a1 1 0  0 1-1.35-.447l-1.48-2.564a1 1 0  0 1 .255-1.287l.94-.767A7.91 7.91 0  0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0 1-.255-1.287zM17 9a3 3 0  1 0 0 6a3 3 0  0 0 0-6' /></svg>",
         "width":20, "height":20, "alt":"설정" },
       { "type":"field_image", "name":"DUP",
         "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0 0 0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0 0 0-2 2v14h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m0 16H8V7h12z'/></svg>",
@@ -595,7 +612,7 @@ function programToC(prog){
           first=false; emit(br.body,indent+'  '); out.push(`${indent}}`);
         }
       }
-      else if(ins.type==='LOOP_INF'){ out.push(`${indent}while(true){`); emit(ins.body,indent+'  '); out.push(`${indent}}`); }
+      else if(ins.type==='LOOP_INF'){ out.push(`${indent}while(true){`); emit(list=ins.body,indent+'  '); out.push(`${indent}}`); }
       else if(ins.type==='WAIT_UNTIL'){ out.push(`${indent}while (!(${ins.cond||'/* cond */'})) { delay(50); }`); }
       else if(ins.type==='REPEAT_UNTIL'){ out.push(`${indent}while (!(${ins.cond||'/* cond */'})) {`); emit(ins.body,indent+'  '); out.push(`${indent}  delay(50);`); out.push(`${indent}}`); }
     }
@@ -603,7 +620,7 @@ function programToC(prog){
   emit(prog,'  '); out.push('}'); return out.join('\n');
 }
 
-/* 코드뷰 갱신 (★ 가드 추가: 오류 시 UI가 죽지 않도록) */
+/* 코드뷰 갱신 (★ 가드 추가) */
 const codeView=document.getElementById('rightTop');
 let refreshTimer=null;
 function refreshCodeDebounced(){
@@ -685,12 +702,12 @@ async function sleepCancelable(ms,myRun){ let remain=Math.max(0,ms); while(remai
 btnRun.onclick=async()=>{ if(!isRunning){
   if(!writeChar){ alert('먼저 BLE 연결!'); return; } setRunning(true);
   let prog=[]; try{ prog=blocksToProgram(); }catch(e){ console.error(e); log('⚠️ 코드 생성 오류: '+e); setRunning(false); return; }
-  if(!prog.length){ alert('실행할 블록이 없습니다.\n"XROBO start" 또는 최상단 스택을 배치하세요.'); setRunning(false); return; }
+  if(!prog.length){ alert('실행할 블록이 없습니다.\n\"XROBO start\" 또는 최상단 스택을 배치하세요.'); setRunning(false); return; }
   const myRunId=++runToken; const myRun={canceled:()=> myRunId!==runToken || !isRunning};
   const runLoop=async(list)=>{ for(let i=0;i<list.length;i++){ if(myRun.canceled()) return; const ins=list[i];
     if(ins.type==='CMD'){ await sendCmdIfActive(ins.s,myRun); }
     else if(ins.type==='W'){ await sleepCancelable(ins.args[0],myRun); }
-    else if(ins.type==='FOR'){ for(let k=0;k<ins.count;k++){ if(myRun.canceled()) return; await runLoop(ins.body);} }
+    else if(ins.type==='FOR'){ for(let k=0; k<ins.count; k++){ if(myRun.canceled()) return; await runLoop(ins.body);} }
     else if(ins.type==='IF'){ /* 웹 런타임 조건평가 없음 */ }
     else if(ins.type==='WAIT_UNTIL'){ await sleepCancelable(50,myRun); i--; }
     else if(ins.type==='REPEAT_UNTIL'){ let guard=0; while(!myRun.canceled() && guard<200){ await runLoop(ins.body); await sleepCancelable(50,myRun); guard++; } }
@@ -718,8 +735,7 @@ document.addEventListener('fullscreenchange', syncFSLabel); syncFSLabel();
 
 /* ================= 멀티 서보 모달 구현 ================= */
 const servoModal=document.getElementById('servoModal');
-const boardEl=document.getElementById('board');
-const stageEl=document.getElementById('boardStage');
+const boardStage=document.getElementById('boardStage');
 const addServoBtn=document.getElementById('addServoBtn');
 const applyBgBtn=document.getElementById('applyBg');
 const bgUrlInput=document.getElementById('bgUrl');
@@ -744,6 +760,8 @@ function projectToArcWithSide(rawDeg, dx, lastScrDeg){
 
 const UNIT_SCALE=0.7, TOP_MARGIN=Math.round(46*UNIT_SCALE);
 
+function clampAng180(a){ return Math.max(0, Math.min(180, Math.round(Number(a)||0))); }
+
 function createUnit(state){
   const name = state.name;
   const unit=document.createElement('div'); unit.className='unit';
@@ -756,7 +774,7 @@ function createUnit(state){
   const row=document.createElement('div'); row.className='row';
   const num=document.createElement('div'); num.className='numbox';
   const inp=document.createElement('input'); inp.type='number'; inp.min='0'; inp.max='180'; inp.step='1';
-  inp.value=String(Math.max(0,Math.min(180, state.angle ?? 90))); inp.title='서보 각도(0~180°)';
+  inp.value=String(clampAng180(state.angle ?? 90)); inp.title='서보 각도(0~180°)';
   num.appendChild(inp);
   const spdBox=document.createElement('div'); spdBox.className='speedbox';
   const spdSel=document.createElement('select'); for(let i=0;i<=20;i++){ const o=document.createElement('option'); o.value=String(i); o.textContent=String(i); spdSel.appendChild(o); }
@@ -780,7 +798,7 @@ function createUnit(state){
   unit.appendChild(svg); document.getElementById('boardStage').appendChild(unit);
 
   state.els={unit,handle,pwrTop,row,inp,spdSel,svg,ring,tickL,tickT,tickR,dot,gradId};
-  state.angle=Math.max(0,Math.min(180,state.angle ?? 90));
+  state.angle=clampAng180(state.angle ?? 90);
   state.speed=Math.max(0,Math.min(20,state.speed ?? 10));
   state.lastScrDeg = state.angle;
 
@@ -805,14 +823,14 @@ function createUnit(state){
   });
 
   state.els.inp.addEventListener('change', ()=>{ const v=Number(state.els.inp.value);
-    state.angle=Number.isFinite(v)?Math.max(0,Math.min(180,v)):state.angle; render(); sendImmediate(`SVS ${state.name} ${state.speed} ${state.angle}`); });
+    state.angle=Number.isFinite(v)?clampAng180(v):state.angle; render(); sendImmediate(`SVS ${state.name} ${state.speed} ${state.angle}`); });
   state.els.spdSel.addEventListener('change', ()=>{ state.speed=Math.max(0,Math.min(20,parseInt(state.els.spdSel.value||'10',10)||10));
     render(); sendImmediate(`SVS ${state.name} ${state.speed} ${state.angle}`); });
 
   function setDotActive(on){ state.els.dot.classList.toggle('red',!!on); state.els.dot.classList.toggle('blue',!on); }
   function pointToVal(clientX,clientY){ const r=state.els.svg.getBoundingClientRect(), cx=r.left+r.width/2, cy=r.top+r.height/2;
     const dx=clientX-cx, dy=cy-clientY; const raw=toDeg(Math.atan2(dy,dx)); let a=((raw%360)+360)%360; if(a>180) a-=360;
-    a=nearestAngle(a,state.lastScrDeg); state.lastScrDeg=a; return Math.max(0,Math.min(180,Math.round(a))); }
+    a=nearestAngle(a,state.lastScrDeg); state.lastScrDeg=a; return clampAng180(a); }
   function dialDown(e){ if(!state.power) return; setDotActive(true);
     const p=('touches' in e)?e.touches[0]:e; state.angle=pointToVal(p.clientX,p.clientY); render(); sendImmediate(`SVS ${state.name} ${state.speed} ${state.angle}`);
     window.addEventListener('mousemove', dialMove); window.addEventListener('touchmove', dialMove, {passive:false});
@@ -844,35 +862,32 @@ function createUnit(state){
 }
 
 /* 모달 열기/닫기/저장 */
-const servoModalEl=document.getElementById('servoModal');
-const boardStage=document.getElementById('boardStage');
 function openServoModal(block){
   currentBlock=block; boardStage.innerHTML=''; unitSeq=0;
   let cfg=multiServoConfigs.get(block.id); if(!cfg){ cfg={bgUrl:'',units:[]}; multiServoConfigs.set(block.id,cfg); }
-  boardStage.style.backgroundImage = cfg.bgUrl ? `url("${cfg.bgUrl}")` : ''; document.getElementById('bgUrl').value=cfg.bgUrl||'';
+  boardStage.style.backgroundImage = cfg.bgUrl ? `url("${cfg.bgUrl}")` : ''; bgUrlInput.value=cfg.bgUrl||'';
   if(cfg.units.length===0){ cfg.units.push({name:'S1', angle:90, speed:10, power:true, x:12, y:56}); }
   cfg.units.forEach(u=>createUnit(u));
-  document.getElementById('rtToggle').onclick=()=>{ /* 실시간 토글은 기존대로 */ };
-  servoModalEl.classList.add('show'); servoModalEl.setAttribute('aria-hidden','false');
+  servoModal.classList.add('show'); servoModal.setAttribute('aria-hidden','false');
 }
 function closeServoModalAndSave(){
   if(!currentBlock) return;
   const cfg=multiServoConfigs.get(currentBlock.id) || {bgUrl:'', units:[]};
-  cfg.bgUrl=(document.getElementById('bgUrl').value||'').trim();
+  cfg.bgUrl=(bgUrlInput.value||'').trim();
   cfg.units = Array.from(boardStage.querySelectorAll('.unit')).map(u=>{
     const name=u.dataset.name;
     const inp=u.querySelector('.numbox input');
     const spd=u.querySelector('.speedbox select');
     const on=!u.querySelector('.pwr-top').classList.contains('off');
-    return { name, angle:Math.max(0,Math.min(180,Number(inp.value)||90)), speed:Math.max(0,Math.min(20,Number(spd.value)||10)), power:on,
+    return { name, angle:clampAng180(Number(inp.value)||90), speed:Math.max(0,Math.min(20,Number(spd.value)||10)), power:on,
              x:parseInt(u.style.left)||12, y:parseInt(u.style.top)||56 };
   });
   multiServoConfigs.set(currentBlock.id, cfg);
   currentBlock.setFieldValue(String(cfg.units.length),'COUNT');
   boardStage.style.backgroundImage = cfg.bgUrl ? `url("${cfg.bgUrl}")` : '';
-  servoModalEl.classList.remove('show'); servoModalEl.setAttribute('aria-hidden','true'); currentBlock=null;
+  servoModal.classList.remove('show'); servoModal.setAttribute('aria-hidden','true'); currentBlock=null;
 }
-document.getElementById('addServoBtn').addEventListener('click', ()=>{
+addServoBtn.addEventListener('click', ()=>{
   if(!currentBlock) return;
   const cfg=multiServoConfigs.get(currentBlock.id) || {bgUrl:'',units:[]};
   const idx=cfg.units.length+1, name='S'+idx;
@@ -880,11 +895,11 @@ document.getElementById('addServoBtn').addEventListener('click', ()=>{
   const x=baseX+(unitSeq%20)*stepX; unitSeq++; const y=baseY+Math.floor(unitSeq/20)*stepY;
   const st={name, angle:90, speed:10, power:true, x, y}; cfg.units.push(st); createUnit(st);
 });
-document.getElementById('applyBg').addEventListener('click', ()=>{ const url=(document.getElementById('bgUrl').value||'').trim(); boardStage.style.backgroundImage=url?`url("${url}")`:''; });
-document.getElementById('closeModal').addEventListener('click', closeServoModalAndSave);
-servoModalEl.addEventListener('click', e=>{ if(e.target===servoModalEl) closeServoModalAndSave(); });
+applyBgBtn.addEventListener('click', ()=>{ const url=(bgUrlInput.value||'').trim(); boardStage.style.backgroundImage=url?`url("${url}")`:''; });
+closeModalBtn.addEventListener('click', closeServoModalAndSave);
+servoModal.addEventListener('click', e=>{ if(e.target===servoModal) closeServoModalAndSave(); });
 
-/* 저장/불러오기 (원본 로직 유지) */
+/* 저장/불러오기 */
 const btnSave=document.getElementById('saveBtn'), btnLoad=document.getElementById('loadBtn');
 function textToDomCompat(xmlText){
   if(Blockly.Xml && typeof Blockly.Xml.textToDom==='function') return Blockly.Xml.textToDom(xmlText);
@@ -904,11 +919,11 @@ function workspaceSaveJsonCompat(workspace){ if(Blockly.serialization?.workspace
 function workspaceLoadJsonCompat(state,workspace){ if(Blockly.serialization?.workspaces?.load){ Blockly.serialization.workspaces.load(state,workspace); return true; } return false; }
 function ts(){ const d=new Date(), pad=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`; }
 function buildProjectPayload(){
-  if(servoModalEl.classList.contains('show')) closeServoModalAndSave();
+  if(servoModal.classList.contains('show')) closeServoModalAndSave();
   let xmlText=null; const dom=workspaceToDomCompat(ws); if(dom) xmlText=domToTextCompat(dom);
   const jsonState=workspaceSaveJsonCompat(ws);
   const entries={}; for(const [k,v] of multiServoConfigs.entries()){
-    entries[k]={ bgUrl:v.bgUrl||'', units:(v.units||[]).map(u=>({ name:u.name, angle:Math.max(0,Math.min(180,u.angle)), speed:Math.max(0,Math.min(20,u.speed||10)), power:!!u.power, x:u.x, y:u.y })) };
+    entries[k]={ bgUrl:v.bgUrl||'', units:(v.units||[]).map(u=>({ name:u.name, angle:clampAng180(u.angle), speed:Math.max(0,Math.min(20,u.speed||10)), power:!!u.power, x:u.x, y:u.y })) };
   }
   return { format:'xrobo-ble-v1', time:new Date().toISOString(), workspaceXml:xmlText, workspaceJson:jsonState, multiServoConfigs:entries, ui:{ } };
 }
@@ -929,7 +944,7 @@ btnSave.addEventListener('click', async ()=>{
   }catch(err){ console.error(err); alert('저장 실패: '+(err?.message||err)); }
 });
 btnLoad.addEventListener('click', async ()=>{
-  if(servoModalEl.classList.contains('show')){ servoModalEl.classList.remove('show'); servoModalEl.setAttribute('aria-hidden','true'); currentBlock=null; }
+  if(servoModal.classList.contains('show')){ servoModal.classList.remove('show'); servoModal.setAttribute('aria-hidden','true'); currentBlock=null; }
   try{
     let file;
     if(window.showOpenFilePicker){
