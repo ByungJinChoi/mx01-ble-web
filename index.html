@@ -64,7 +64,7 @@
     user-select:none;
   }
   #connectToggle{ background:#2563eb; color:#fff; }
-  #rtToggle.on{ background:#2563eb; color:#fff; } /* 모달 속 실시간 버튼 */
+  #rtToggle.on{ background:#2563eb; color:#fff; }
   #runToggle{ background:#16a34a; color:#fff; }
   #fsBtn{ background:#111827; color:#fff; }
 
@@ -90,11 +90,11 @@
   #main{
     display:flex; width:100%;
     height: calc(100vh - var(--headerH));
-    min-height: 0; /* ← 내부 스크롤 허용 */
+    min-height: 0;
   }
   #left{
     position:relative; flex:1 1 auto; min-width:0; height:100%;
-    min-height:0; /* ← 내부 스크롤 허용 */
+    min-height:0;
     display:flex; overflow:visible;
   }
   #blocklyDiv{ flex:1 1 auto; min-width:0; height:100%; width:100%; }
@@ -104,17 +104,16 @@
     flex:0 0 40%; display:flex; flex-direction:column; background:#fff;
     margin:8px 8px 8px 0; border:1px solid #e5e7eb; border-left:3px solid var(--blue);
     border-radius:12px 0 0 12px; box-shadow:0 2px 10px rgba(0,0,0,.04);
-    overflow:hidden; position:relative; min-height:0; /* ← 내부 스크롤 허용 */
+    overflow:hidden; position:relative; min-height:0;
   }
   #rightTop{
-    flex:1 1 auto; min-height:0; /* ← 내부 스크롤 허용 */
+    flex:1 1 auto; min-height:0;
     border-bottom:1px solid #e5e7eb; background:#f5f7fa; color:#111827;
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     font-size: calc(13px * var(--uiScale)); line-height:1.45;
     padding: calc(12px * var(--uiScale));
     overflow:auto; white-space:pre; tab-size:2;
   }
-  /* 실행 로그 패널: 고정 높이 + 내부 스크롤 구조 */
   #rightBottom{
     flex: 0 0 var(--logH);
     display: flex;
@@ -126,7 +125,6 @@
     color:#d1e4ff; 
     border-top:1px solid #1f2937;
   }
-  /* 실제 로그 박스 */
   #log{
     flex: 1 1 0;
     min-height: 0;
@@ -194,7 +192,7 @@
   .modal-head .btn{ height:30px; background:#fff; border:1px solid #d1d5db; }
   .modal-body{ position:relative; flex:1 1 auto; }
 
-  /* 모달 보드(흰 배경) + 유닛(회색 박스) + 검은 다이얼 */
+  /* 모달 보드 + 유닛 + 다이얼 */
   .board{
     position:absolute; inset:0; background:#ffffff; background-size:contain; background-repeat:no-repeat; background-position:center;
     overflow:auto;
@@ -410,7 +408,7 @@ const SPEEDS=Array.from({length:41},(_,i)=>20-i).map(v=>[String(v),String(v)]);
 const TIMES100=Array.from({length:10},(_,i)=>(100*(i+1))).map(v=>[String(v),String(v)]);
 const ANG_5=Array.from({length:37},(_,i)=>i*5).map(v=>[String(v),String(v)]);
 const LED_TGT=[...PINS_OUT,["CPU","CPU"]];
-const LED_MODE=[["밝기","BRIGHT"]];  // BRIGHT만 허용
+const LED_MODE=[["밝기","BRIGHT"]];
 const LED_VALS=Array.from({length:20},(_,i)=>[String(i),String(i)]);
 const PITCHES=(()=>{const KR=["도","레","미","파","솔","라","시"],EN=["C","D","E","F","G","A","B"],L=[];
   for(let o=4;o<=6;o++) for(let i=0;i<7;i++) L.push([`${KR[i]}${o}`, `${EN[i]}${o}`]); return L;})();
@@ -487,7 +485,7 @@ Blockly.defineBlocksWithJsonArray([
     "args0":[
       { "type":"field_label_serializable", "name":"COUNT", "text":"0" },
       { "type":"field_image", "name":"CFG",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0 0 1 1.46-.419l.21-1.146A1 1 0 0 1 15.52 2h2.96a1 1 0 0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0 0 1 1.33.427l1.48 2.564a1 1 0 0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0 0 1 .255 1.287l-1.48 2.564a1 1 0 0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0 0 1 18.48 22h-2.96a1 1 0 0 1-.986-.836l-.21-1.145a8.9 8.9 0 0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0 0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0 0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
+        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0 0 1 1.46-.419l.21-1.146A1 1 0 0 1 15.52 2h2.96a1 1 0 0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0 0 1 1.33.427l1.48 2.564a1 1 0 0 1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0  0 1 .255 1.287l-1.48 2.564a1 1 0 0 1-1.33.427l-1.028-.515a8.9 8.9 0 0 1-1.46.52l-.21 1.145A1 1 0 0 1 18.48 22h-2.96a1 1 0 0 1-.986-.836l-.21-1.145a8.9 8.9 0 0 1-1.459-.419l-1.028.514a1 1 0 0 1-1.35-.447l-1.48-2.564a1 1 0 0 1 .255-1.287l.94-.767A7.91 7.91 0 0 1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0 0 1-.255-1.287zM17 9a3 3 0 1 0 0 6a3 3 0 0 0 0-6' /></svg>",
         "width":20, "height":20, "alt":"설정" },
       { "type":"field_image", "name":"DUP",
         "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0 0 0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0 0 0-2 2v14h14a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2m0 16H8V7h12z'/></svg>",
@@ -508,7 +506,7 @@ function duplicateMultiServoBlock(srcBlock){
   const cfgOld = multiServoConfigs.get(srcBlock.id);
   const cfgNew = cloneConfigDeep(cfgOld || {
     bgUrl:'',
-    units:[{name:'S1', angle:135, speed:10, power:true, x:12, y:56}]
+    units:[{name:'S1', angle:90, speed:10, power:true, x:12, y:56}] // 기본 각도 90°
   });
   const pos = srcBlock.getRelativeToSurfaceXY();
   const newBlock = ws.newBlock('multi_servo');
@@ -535,9 +533,9 @@ function outToS(out){
   return m ? ('S'+m[1]) : String(out||'');
 }
 const clampAng180 = a => Math.max(0, Math.min(180, Math.round(Number(a)||0)));
-function speedToDly(sp){            // 모달 속도(1~20) → SVS dly(0~180)
-  const s = Math.max(1, Math.min(20, parseInt(sp,10)||10));
-  return Math.round((20 - s) * 9);  // 20→0(빠름) .. 1→171(느림)
+function speedToDly(sp){            // 속도(0~20) → SVS dly(0~180)
+  const s = Math.max(0, Math.min(20, parseInt(sp,10)||10));
+  return Math.round((20 - s) * 9);  // 20→0(빠름) .. 0→180(느림)
 }
 
 function numFromInput(parent, name, def=0){
@@ -705,7 +703,7 @@ function programToC(prog){
           first=false; emit(br.body,indent+'  '); out.push(`${indent}}`);
         }
       }
-      else if(ins.type==='LOOP_INF'){ out.push(`${indent}while(true){`); emit(ins.body,indent+'  '); out.push(`${indent}}`); }
+      else if(ins.type==='LOOP_INF'){ out.push(`${indent}while(true){`); emit(list=ins.body,indent+'  '); out.push(`${indent}}`); }
       else if(ins.type==='WAIT_UNTIL'){ out.push(`${indent}while (!(${ins.cond||'/* cond */'})) { delay(50); }`); }
       else if(ins.type==='REPEAT_UNTIL'){ out.push(`${indent}while (!(${ins.cond||'/* cond */'})) {`); emit(ins.body,indent+'  '); out.push(`${indent}  delay(50);`); out.push(`${indent}}`); }
     }
@@ -745,7 +743,7 @@ let bleDevice=null,bleServer=null,bleService=null,writeChar=null,notifyChar=null
 let connectToken=0;
 let runToken=0;
 let isConnected=false, isRunning=false;
-let realTime=false; // ★ 실시간 전송
+let realTime=false; // 실시간 전송
 
 const $=id=>document.getElementById(id);
 const log=m=>{ const L=$('log'); L.textContent+=m+"\n"; L.scrollTop=L.scrollHeight; };
@@ -937,12 +935,18 @@ const applyBgBtn = document.getElementById('applyBg');
 const bgUrlInput = document.getElementById('bgUrl');
 const closeModalBtn = document.getElementById('closeModal');
 
-let currentBlock = null; // 현재 설정중인 멀티 서보 블록
-let unitSeq = 0;         // 유닛 생성 순서(초기 위치 분산)
+let currentBlock = null;
+let unitSeq = 0;
 const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
 const toRad=d=>d*Math.PI/180;
 const toDeg=r=>r*180/Math.PI;
-const valToScreenDeg = v => 225 - v;  // 0=225°, 135=90°, 180=45°
+
+/* ── 변경: 12시(90°)가 각도 90에 해당하도록 맵핑 ──
+   화면각(scr) = 180 - 각도(val)  (val: 0..180 → scr: 180..0)
+   역변환: val = 180 - scr
+   허용 호(arc): -45..225 유지 (가까운 팔로우) */
+const valToScreenDeg = v => 180 - v;
+
 function nearestAngle(target, reference){
   const c=[target-360, target, target+360]; let best=c[0], bd=Math.abs(c[0]-reference);
   for(const x of c){ const d=Math.abs(x-reference); if(d<bd){ bd=d; best=x; } } return best;
@@ -968,13 +972,19 @@ function createUnit(state){
   // 행(각도/속도)
   const row = document.createElement('div'); row.className='row';
   const num = document.createElement('div'); num.className='numbox';
-  const inp = document.createElement('input'); inp.type='number'; inp.min='0'; inp.max='180'; inp.step='1'; inp.value=String(clampAng180(state.angle ?? 135));
+  const inp = document.createElement('input'); 
+  inp.type='number'; inp.min='0'; inp.max='180'; inp.step='1'; 
+  inp.value=String(clampAng180(state.angle ?? 90));   // 기본 90°
+  inp.title='서보 각도(0~180°)';
   num.appendChild(inp);
+
   const spdBox = document.createElement('div'); spdBox.className='speedbox';
   const spdSel = document.createElement('select');
-  for(let i=1;i<=20;i++){ const o=document.createElement('option'); o.value=String(i); o.textContent=String(i); spdSel.appendChild(o); }
-  spdSel.value = String(state.speed ?? 10);
+  for(let i=0;i<=20;i++){ const o=document.createElement('option'); o.value=String(i); o.textContent=String(i); spdSel.appendChild(o); } // 0..20
+  spdSel.value = String(Math.max(0, Math.min(20, state.speed ?? 10)));
+  spdSel.title='이동 속도(0~20: 클수록 빠름)';
   spdBox.appendChild(spdSel);
+
   row.append(num, spdBox); unit.appendChild(row);
 
   // 다이얼
@@ -996,9 +1006,9 @@ function createUnit(state){
   svg.appendChild(ring);
 
   const mkTick = ()=>document.createElementNS(svgNS,'line');
-  const tick0=mkTick(), tick135=mkTick(), tick270=mkTick();
-  tick0.setAttribute('class','tick'); tick135.setAttribute('class','tick'); tick270.setAttribute('class','tick');
-  svg.append(tick0,tick135,tick270);
+  const tickL=mkTick(), tickT=mkTick(), tickR=mkTick(); // 좌(180), 상(90), 우(0)
+  tickL.setAttribute('class','tick'); tickT.setAttribute('class','tick'); tickR.setAttribute('class','tick');
+  svg.append(tickL,tickT,tickR);
 
   const dot=document.createElementNS(svgNS,'circle');
   dot.setAttribute('class','dot blue'); dot.setAttribute('r','5.4'); dot.setAttribute('fill', `url(#${gradId})`);
@@ -1008,8 +1018,9 @@ function createUnit(state){
   boardEl.appendChild(unit);
 
   // 내부 상태 합치기
-  state.els = {unit, handle, pwrTop, row, inp, spdSel, svg, ring, tick0, tick135, tick270, dot, gradId};
-  state.angle = clampAng180(state.angle ?? 135);
+  state.els = {unit, handle, pwrTop, row, inp, spdSel, svg, ring, tickL, tickT, tickR, dot, gradId};
+  state.angle = clampAng180(state.angle ?? 90);
+  state.speed = Math.max(0, Math.min(20, state.speed ?? 10));
   state.lastScrDeg = valToScreenDeg(state.angle);
 
   function layoutTicks(){
@@ -1019,12 +1030,14 @@ function createUnit(state){
       const x2=CX+R2*Math.cos(a), y2=CY-R2*Math.sin(a);
       el.setAttribute('x1',x1); el.setAttribute('y1',y1); el.setAttribute('x2',x2); el.setAttribute('y2',y2);
     }
-    setTick(state.els.tick0,225); setTick(state.els.tick135,90); setTick(state.els.tick270,315);
+    setTick(state.els.tickL,180); // 왼쪽
+    setTick(state.els.tickT, 90); // 위
+    setTick(state.els.tickR,  0); // 오른쪽
   }
   function placeDot(){
     if(!state.els.dot.classList.contains('red')) state.els.dot.setAttribute('fill', `url(#${state.els.gradId})`);
-    const R = 30; // 안쪽 경로
-    const a=toRad(valToScreenDeg(state.angle));
+    const R = 30;
+    const a=toRad(valToScreenDeg(state.angle));     // scr = 180 - val
     const x=50+R*Math.cos(a), y=50-R*Math.sin(a);
     state.els.dot.setAttribute('cx',x); state.els.dot.setAttribute('cy',y);
   }
@@ -1043,7 +1056,7 @@ function createUnit(state){
     if(state.power){
       sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
     }
-    render(); // 🔧 상태 토글 후에도 표시 갱신
+    render();
   });
 
   // 각도/속도
@@ -1051,15 +1064,15 @@ function createUnit(state){
     const v=Number(state.els.inp.value);
     if(Number.isFinite(v)){
       state.angle=clampAng180(v);
-      render(); // 🔧 입력 변경 즉시 반영
+      render();
       sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${state.angle}`);
     }else{
       state.els.inp.value=String(clampAng180(state.angle));
     }
   });
   state.els.spdSel.addEventListener('change', ()=>{
-    state.speed = clamp(parseInt(state.els.spdSel.value||'10',10)||10,1,20);
-    render(); // 🔧 속도 변경 시에도 렌더
+    state.speed = Math.max(0, Math.min(20, parseInt(state.els.spdSel.value||'10',10)||10));
+    render();
     sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
   });
 
@@ -1073,17 +1086,17 @@ function createUnit(state){
     const r=state.els.svg.getBoundingClientRect();
     const cx=r.left+r.width/2, cy=r.top+r.height/2;
     const dx=clientX-cx, dy=cy-clientY;
-    const raw = toDeg(Math.atan2(dy, dx));
+    const raw = toDeg(Math.atan2(dy, dx));                // 화면각(수학)
     const scr = projectToArcWithSide(raw, dx, state.lastScrDeg);
     state.lastScrDeg = scr;
-    return Math.max(0, Math.min(180, Math.round(225 - scr))); // 0..180
+    return Math.max(0, Math.min(180, Math.round(180 - scr))); // val = 180 - scr
   }
   function dialDown(e){
     if(!state.power) return;
     setDotActive(true);
     const p=('touches' in e)?e.touches[0]:e;
     state.angle = pointToVal(p.clientX, p.clientY);
-    render(); // 🔧 드래그 시작 즉시 표시 갱신
+    render();
     sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
     window.addEventListener('mousemove', dialMove);
     window.addEventListener('touchmove', dialMove, {passive:false});
@@ -1095,7 +1108,7 @@ function createUnit(state){
     const p=('touches' in e)?e.touches[0]:e;
     if('touches' in e) e.preventDefault();
     state.angle = pointToVal(p.clientX, p.clientY);
-    render(); // 🔧 이동 중 계속 갱신
+    render();
     sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
   }
   function dialUp(){
@@ -1109,7 +1122,7 @@ function createUnit(state){
     if(!state.power) return; e.preventDefault();
     const d=Math.sign(e.deltaY);
     state.angle=clampAng180(state.angle - d*1);
-    render(); // 🔧 휠 스텝마다 렌더
+    render();
     sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${state.angle}`);
   }, {passive:false});
 
@@ -1159,7 +1172,7 @@ function openServoModal(block){
   bgUrlInput.value = cfg.bgUrl || '';
 
   if(cfg.units.length === 0){
-    cfg.units.push({name:'S1', angle:135, speed:10, power:true, x:12, y:56});
+    cfg.units.push({name:'S1', angle:90, speed:10, power:true, x:12, y:56}); // 기본 90°
   }
   cfg.units.forEach(u => createUnit(u));
 
@@ -1178,8 +1191,8 @@ function closeServoModalAndSave(){
     const on  = !u.querySelector('.pwr-top').classList.contains('off');
     return {
       name,
-      angle: clampAng180(Number(inp.value)||135),
-      speed: Math.max(1, Math.min(20, Number(spd.value)||10)),
+      angle: clampAng180(Number(inp.value)||90),
+      speed: Math.max(0, Math.min(20, Number(spd.value)||10)), // 0..20
       power: on,
       x: parseInt(u.style.left)||10,
       y: parseInt(u.style.top)||48
@@ -1203,7 +1216,7 @@ addServoBtn.addEventListener('click', ()=>{
   const name = 'S'+idx;
   const x = 12 + (unitSeq%8)*16; unitSeq++;
   const y = 56 + Math.floor(unitSeq/8)*20;
-  const st = {name, angle:135, speed:10, power:true, x, y};
+  const st = {name, angle:90, speed:10, power:true, x, y}; // 기본 90°
   cfg.units.push(st);
   createUnit(st);
 });
@@ -1225,7 +1238,7 @@ function textToDomCompat(xmlText){
   const doc = parser.parseFromString(xmlText, 'text/xml');
   const perr = doc.getElementsByTagName('parsererror')[0];
   if (perr) throw new Error('XML 파싱 오류');
-  return doc; // Document 반환
+  return doc;
 }
 function domToTextCompat(dom){
   if (Blockly.Xml && typeof Blockly.Xml.domToText === 'function') return Blockly.Xml.domToText(dom);
@@ -1234,7 +1247,7 @@ function domToTextCompat(dom){
 }
 function workspaceToDomCompat(workspace){
   if (Blockly.Xml && typeof Blockly.Xml.workspaceToDom === 'function') return Blockly.Xml.workspaceToDom(workspace);
-  return null; // 최신 serialization만 있는 빌드일 수 있음
+  return null;
 }
 function domToWorkspaceCompat(dom, workspace){
   if (Blockly.Xml && typeof Blockly.Xml.domToWorkspace === 'function') return Blockly.Xml.domToWorkspace(dom, workspace);
@@ -1266,20 +1279,20 @@ function buildProjectPayload(){
   const dom = workspaceToDomCompat(ws);
   if(dom) xmlText = domToTextCompat(dom);
 
-  const jsonState = workspaceSaveJsonCompat(ws); // 일부 빌드 대비 백업
+  const jsonState = workspaceSaveJsonCompat(ws);
 
   const entries = {};
   for(const [k,v] of multiServoConfigs.entries()){
     entries[k] = { bgUrl: v.bgUrl||'', units: (v.units||[]).map(u=>({
-      name: u.name, angle: clampAng180(u.angle), speed: Math.max(1, Math.min(20, u.speed||10)), power: !!u.power, x: u.x, y: u.y
+      name: u.name, angle: clampAng180(u.angle), speed: Math.max(0, Math.min(20, u.speed||10)), power: !!u.power, x: u.x, y: u.y
     }))};
   }
 
   return {
     format: 'xrobo-ble-v1',
     time: new Date().toISOString(),
-    workspaceXml: xmlText,      // 선호
-    workspaceJson: jsonState,   // 백업
+    workspaceXml: xmlText,
+    workspaceJson: jsonState,
     multiServoConfigs: entries,
     ui: { realTime }
   };
