@@ -114,34 +114,32 @@
     padding: calc(12px * var(--uiScale));
     overflow:auto; white-space:pre; tab-size:2;
   }
-/* 실행 로그 패널: 고정 높이 + 내부 스크롤 구조 */
-#rightBottom{
-  flex: 0 0 var(--logH);          /* <- 높이는 변수로 고정 */
-  display: flex;                  /* <- 세로 플렉스 컨테이너로 변경 */
-  flex-direction: column;
-  min-height: 0;                  /* <- 내부 스크롤 허용 */
-  overflow: hidden;               /* <- 자식 넘침 감춤(스크롤은 #log에서 처리) */
-  padding: calc(10px * var(--uiScale));
-  background:#0b0f14; 
-  color:#d1e4ff; 
-  border-top:1px solid #1f2937;
-}
-
-/* 실제 로그 박스: 영역을 채우고, 내용은 스크롤 */
-#log{
-  flex: 1 1 0;                    /* <- 남은 영역을 채움 */
-  min-height: 0;                  /* <- 내부 스크롤에 필수 */
-  overflow: auto;                 /* <- 내용 길어지면 스크롤 생성 */
-  white-space: pre-wrap; 
-  background:#0b0f14;
-  border:1px solid #1f2937; 
-  border-radius: calc(8px * var(--uiScale));
-  padding: calc(10px * var(--uiScale));
-  font-family: ui-monospace, Menlo, Consolas, monospace;
-  font-size: calc(12px * var(--uiScale)); 
-  color:#d1e4ff;
-}
-
+  /* 실행 로그 패널: 고정 높이 + 내부 스크롤 구조 */
+  #rightBottom{
+    flex: 0 0 var(--logH);
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+    padding: calc(10px * var(--uiScale));
+    background:#0b0f14; 
+    color:#d1e4ff; 
+    border-top:1px solid #1f2937;
+  }
+  /* 실제 로그 박스 */
+  #log{
+    flex: 1 1 0;
+    min-height: 0;
+    overflow: auto;
+    white-space: pre-wrap;
+    background:#0b0f14;
+    border:1px solid #1f2937; 
+    border-radius: calc(8px * var(--uiScale));
+    padding: calc(10px * var(--uiScale));
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    font-size: calc(12px * var(--uiScale)); 
+    color:#d1e4ff;
+  }
 
   /* 실행창 토글 핸들 */
   #panelHandle{
@@ -182,7 +180,6 @@
           background:rgba(0,0,0,.45); z-index:10000; }
   .modal.show{ display:flex; }
   .modal-card{
-    /* 상하를 조금 더 확대 (이전보다 살짝 키움) */
     width:min(98vw, 1400px);
     height:min(98vh, 1040px);
     background:#fff; border-radius:12px; box-shadow:0 18px 60px rgba(0,0,0,.25);
@@ -200,7 +197,7 @@
   /* 모달 보드(흰 배경) + 유닛(회색 박스) + 검은 다이얼 */
   .board{
     position:absolute; inset:0; background:#ffffff; background-size:contain; background-repeat:no-repeat; background-position:center;
-    overflow:auto; /* ← 넘치면 스크롤 */
+    overflow:auto;
   }
   .unit{
     position:absolute; width:128px; height:128px;
@@ -413,7 +410,8 @@ const SPEEDS=Array.from({length:41},(_,i)=>20-i).map(v=>[String(v),String(v)]);
 const TIMES100=Array.from({length:10},(_,i)=>(100*(i+1))).map(v=>[String(v),String(v)]);
 const ANG_5=Array.from({length:37},(_,i)=>i*5).map(v=>[String(v),String(v)]);
 const LED_TGT=[...PINS_OUT,["CPU","CPU"]];
-const LED_MODE=[["밝기","BRIGHT"],["숨쉬기","BREATHE"]];
+/* BRIGHT만 허용 (펌웨어 호환) */
+const LED_MODE=[["밝기","BRIGHT"]];
 const LED_VALS=Array.from({length:20},(_,i)=>[String(i),String(i)]);
 const PITCHES=(()=>{const KR=["도","레","미","파","솔","라","시"],EN=["C","D","E","F","G","A","B"],L=[];
   for(let o=4;o<=6;o++) for(let i=0;i<7;i++) L.push([`${KR[i]}${o}`, `${EN[i]}${o}`]); return L;})();
@@ -457,7 +455,8 @@ Blockly.defineBlocksWithJsonArray([
     "args0":[{"type":"field_dropdown","name":"OUT","options":PINS_OUT},{"type":"input_value","name":"ANG","check":"Number"}],
     "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":30 },
 
-  { "type":"servo_slow","message0":"슬로우 서보 %1 지연 %2 ms 각도 %3°",
+  /* 라벨 교정: 지연은 0~180 */
+  { "type":"servo_slow","message0":"슬로우 서보 %1 지연(0~180) %2 각도 %3°",
     "args0":[{"type":"field_dropdown","name":"OUT","options":PINS_OUT},{"type":"input_value","name":"DELAY","check":"Number"},{"type":"input_value","name":"ANG","check":"Number"}],
     "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":30 },
 
@@ -532,6 +531,17 @@ Blockly.Extensions.register('multi_servo_cfg', function (){
 });
 
 /* ================= 식/코드 생성 유틸 ================= */
+/* ==== XROBO v1.9 프로토콜 보정 유틸 ==== */
+function outToS(out){
+  const m = String(out||'').match(/^OUT(\d)$/);
+  return m ? ('S'+m[1]) : String(out||'');
+}
+const clampAng180 = a => Math.max(0, Math.min(180, Math.round(Number(a)||0)));
+function speedToDly(sp){            // 모달 속도(1~20) → SVS dly(0~180)
+  const s = Math.max(1, Math.min(20, parseInt(sp,10)||10));
+  return Math.round((20 - s) * 9);  // 20→0(빠름) .. 1→171(느림)
+}
+
 function numFromInput(parent, name, def=0){
   const n = Number(Blockly.JavaScript.valueToCode(parent, name, Blockly.JavaScript.ORDER_NONE) ?? '');
   return Number.isFinite(n) ? n : def;
@@ -589,18 +599,27 @@ function walkNode(b, list){
     case 'motor34_in':{
       const v3=numFromInput(b,'M3',0),v4=numFromInput(b,'M4',0),ms=numFromInput(b,'MS',0);
       list.push({type:'CMD',s:`M34 ${Math.round(v3)} ${Math.round(v4)} ${Math.round(ms)}`}); if(ms>0) list.push({type:'W',args:[ms]}); break; }
+
+    /* ==== 서보 프로토콜 교정: OUT# → S#, 각도 0..180 ==== */
     case 'servo_dd':{
-      const out=b.getFieldValue('OUT'),ang=+b.getFieldValue('ANG'); list.push({type:'CMD',s:`SV ${out} ${Math.round(ang)}`}); break; }
+      const out=b.getFieldValue('OUT'), ang=+b.getFieldValue('ANG');
+      const S=outToS(out), A=clampAng180(ang);
+      list.push({type:'CMD', s:`SV ${S} ${A}`}); break; }
     case 'servo_in':{
-      const out=b.getFieldValue('OUT'),ang=numFromInput(b,'ANG',90); list.push({type:'CMD',s:`SV ${out} ${Math.round(ang)}`}); break; }
+      const out=b.getFieldValue('OUT'), ang=numFromInput(b,'ANG',90);
+      const S=outToS(out), A=clampAng180(ang);
+      list.push({type:'CMD', s:`SV ${S} ${A}`}); break; }
     case 'servo_slow':{
-      const out=b.getFieldValue('OUT'),del=numFromInput(b,'DELAY',5),ang=numFromInput(b,'ANG',90);
-      list.push({type:'CMD',s:`SVS ${out} ${Math.round(del)} ${Math.round(ang)}`}); break; }
+      const out=b.getFieldValue('OUT'), del=numFromInput(b,'DELAY',5), ang=numFromInput(b,'ANG',90);
+      const S=outToS(out), D=Math.max(0, Math.min(180, Math.round(del))), A=clampAng180(ang);
+      list.push({type:'CMD', s:`SVS ${S} ${D} ${A}`}); break; }
+
     case 'melody':{
       const p=b.getFieldValue('PITCH'),dur=numFromInput(b,'DUR',200),wait=numFromInput(b,'WAIT',250);
       list.push({type:'CMD',s:`MEL ${p} ${Math.round(dur)} ${Math.round(wait)}`}); if(wait>0) list.push({type:'W',args:[wait]}); break; }
     case 'led_ctrl':{
-      const t=b.getFieldValue('TGT'),m=b.getFieldValue('MODE'),v=+b.getFieldValue('VAL'); list.push({type:'CMD',s:`LED ${t} ${m} ${v}`}); break; }
+      const t=b.getFieldValue('TGT'),m=b.getFieldValue('MODE'),v=+b.getFieldValue('VAL'); 
+      list.push({type:'CMD',s:`LED ${t} ${m} ${v}`}); break; }
 
     /* 멀티 서보 블록은 설정/메타 전용 → 코드 생성 없음(주석만) */
     case 'multi_servo':{
@@ -925,7 +944,7 @@ let unitSeq = 0;         // 유닛 생성 순서(초기 위치 분산)
 const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
 const toRad=d=>d*Math.PI/180;
 const toDeg=r=>r*180/Math.PI;
-const valToScreenDeg = v => 225 - v;  // 0=225°, 135=90°, 270=315°
+const valToScreenDeg = v => 225 - v;  // 0=225°, 135=90°, 180=45°
 function nearestAngle(target, reference){
   const c=[target-360, target, target+360]; let best=c[0], bd=Math.abs(c[0]-reference);
   for(const x of c){ const d=Math.abs(x-reference); if(d<bd){ bd=d; best=x; } } return best;
@@ -951,7 +970,7 @@ function createUnit(state){
   // 행(각도/속도)
   const row = document.createElement('div'); row.className='row';
   const num = document.createElement('div'); num.className='numbox';
-  const inp = document.createElement('input'); inp.type='number'; inp.min='0'; inp.max='270'; inp.step='1'; inp.value=String(state.angle ?? 135);
+  const inp = document.createElement('input'); inp.type='number'; inp.min='0'; inp.max='180'; inp.step='1'; inp.value=String(clampAng180(state.angle ?? 135));
   num.appendChild(inp);
   const spdBox = document.createElement('div'); spdBox.className='speedbox';
   const spdSel = document.createElement('select');
@@ -992,7 +1011,8 @@ function createUnit(state){
 
   // 내부 상태 합치기
   state.els = {unit, handle, pwrTop, row, inp, spdSel, svg, ring, tick0, tick135, tick270, dot, gradId};
-  state.lastScrDeg = valToScreenDeg(state.angle ?? 135);
+  state.angle = clampAng180(state.angle ?? 135);
+  state.lastScrDeg = valToScreenDeg(state.angle);
 
   function layoutTicks(){
     const R=40, S=2, Rout=R+S/2, OUTSET=3, L=8, R1=Rout+OUTSET, R2=R1+L, CX=50, CY=50;
@@ -1022,19 +1042,24 @@ function createUnit(state){
     state.power = !state.power;
     state.els.pwrTop.classList.toggle('off', !state.power);
     state.els.pwrTop.textContent = state.power?'ON':'OFF';
-    render();
-    sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`);
+    if(state.power){
+      sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
+    }
   });
 
   // 각도/속도
   state.els.inp.addEventListener('change', ()=>{
     const v=Number(state.els.inp.value);
-    if(Number.isFinite(v)){ state.angle=clamp(Math.round(v),0,270); render(); sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`); }
-    else render();
+    if(Number.isFinite(v)){
+      state.angle=clampAng180(v);
+      sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${state.angle}`);
+    }else{
+      state.els.inp.value=String(clampAng180(state.angle));
+    }
   });
   state.els.spdSel.addEventListener('change', ()=>{
     state.speed = clamp(parseInt(state.els.spdSel.value||'10',10)||10,1,20);
-    render(); sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`);
+    sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
   });
 
   // 다이얼
@@ -1050,14 +1075,14 @@ function createUnit(state){
     const raw = toDeg(Math.atan2(dy, dx));
     const scr = projectToArcWithSide(raw, dx, state.lastScrDeg);
     state.lastScrDeg = scr;
-    return clamp(Math.round(225 - scr), 0, 270);
+    return Math.max(0, Math.min(180, Math.round(225 - scr))); // 0..180
   }
   function dialDown(e){
     if(!state.power) return;
     setDotActive(true);
     const p=('touches' in e)?e.touches[0]:e;
     state.angle = pointToVal(p.clientX, p.clientY);
-    render(); sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`);
+    sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
     window.addEventListener('mousemove', dialMove);
     window.addEventListener('touchmove', dialMove, {passive:false});
     window.addEventListener('mouseup', dialUp, {once:true});
@@ -1068,7 +1093,7 @@ function createUnit(state){
     const p=('touches' in e)?e.touches[0]:e;
     if('touches' in e) e.preventDefault();
     state.angle = pointToVal(p.clientX, p.clientY);
-    render(); sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`);
+    sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
   }
   function dialUp(){
     setDotActive(false);
@@ -1080,7 +1105,8 @@ function createUnit(state){
   state.els.svg.addEventListener('wheel', e=>{
     if(!state.power) return; e.preventDefault();
     const d=Math.sign(e.deltaY);
-    state.angle=clamp(state.angle - d*1,0,270); render(); sendImmediate(`SVN ${state.name} ${state.angle} ${state.speed}`);
+    state.angle=clampAng180(state.angle - d*1);
+    sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${state.angle}`);
   }, {passive:false});
 
   // 유닛 드래그(헤더로만)
@@ -1148,8 +1174,8 @@ function closeServoModalAndSave(){
     const on  = !u.querySelector('.pwr-top').classList.contains('off');
     return {
       name,
-      angle: Number(inp.value)||135,
-      speed: Number(spd.value)||10,
+      angle: clampAng180(Number(inp.value)||135),
+      speed: Math.max(1, Math.min(20, Number(spd.value)||10)),
       power: on,
       x: parseInt(u.style.left)||10,
       y: parseInt(u.style.top)||48
@@ -1241,7 +1267,7 @@ function buildProjectPayload(){
   const entries = {};
   for(const [k,v] of multiServoConfigs.entries()){
     entries[k] = { bgUrl: v.bgUrl||'', units: (v.units||[]).map(u=>({
-      name: u.name, angle: u.angle, speed: u.speed, power: !!u.power, x: u.x, y: u.y
+      name: u.name, angle: clampAng180(u.angle), speed: Math.max(1, Math.min(20, u.speed||10)), power: !!u.power, x: u.x, y: u.y
     }))};
   }
 
