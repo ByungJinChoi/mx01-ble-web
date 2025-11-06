@@ -410,8 +410,7 @@ const SPEEDS=Array.from({length:41},(_,i)=>20-i).map(v=>[String(v),String(v)]);
 const TIMES100=Array.from({length:10},(_,i)=>(100*(i+1))).map(v=>[String(v),String(v)]);
 const ANG_5=Array.from({length:37},(_,i)=>i*5).map(v=>[String(v),String(v)]);
 const LED_TGT=[...PINS_OUT,["CPU","CPU"]];
-/* BRIGHT만 허용 (펌웨어 호환) */
-const LED_MODE=[["밝기","BRIGHT"]];
+const LED_MODE=[["밝기","BRIGHT"]];  // BRIGHT만 허용
 const LED_VALS=Array.from({length:20},(_,i)=>[String(i),String(i)]);
 const PITCHES=(()=>{const KR=["도","레","미","파","솔","라","시"],EN=["C","D","E","F","G","A","B"],L=[];
   for(let o=4;o<=6;o++) for(let i=0;i<7;i++) L.push([`${KR[i]}${o}`, `${EN[i]}${o}`]); return L;})();
@@ -455,7 +454,6 @@ Blockly.defineBlocksWithJsonArray([
     "args0":[{"type":"field_dropdown","name":"OUT","options":PINS_OUT},{"type":"input_value","name":"ANG","check":"Number"}],
     "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":30 },
 
-  /* 라벨 교정: 지연은 0~180 */
   { "type":"servo_slow","message0":"슬로우 서보 %1 지연(0~180) %2 각도 %3°",
     "args0":[{"type":"field_dropdown","name":"OUT","options":PINS_OUT},{"type":"input_value","name":"DELAY","check":"Number"},{"type":"input_value","name":"ANG","check":"Number"}],
     "previousStatement":null,"nextStatement":null,"inputsInline":true,"colour":30 },
@@ -1045,6 +1043,7 @@ function createUnit(state){
     if(state.power){
       sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
     }
+    render(); // 🔧 상태 토글 후에도 표시 갱신
   });
 
   // 각도/속도
@@ -1052,6 +1051,7 @@ function createUnit(state){
     const v=Number(state.els.inp.value);
     if(Number.isFinite(v)){
       state.angle=clampAng180(v);
+      render(); // 🔧 입력 변경 즉시 반영
       sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${state.angle}`);
     }else{
       state.els.inp.value=String(clampAng180(state.angle));
@@ -1059,6 +1059,7 @@ function createUnit(state){
   });
   state.els.spdSel.addEventListener('change', ()=>{
     state.speed = clamp(parseInt(state.els.spdSel.value||'10',10)||10,1,20);
+    render(); // 🔧 속도 변경 시에도 렌더
     sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
   });
 
@@ -1082,6 +1083,7 @@ function createUnit(state){
     setDotActive(true);
     const p=('touches' in e)?e.touches[0]:e;
     state.angle = pointToVal(p.clientX, p.clientY);
+    render(); // 🔧 드래그 시작 즉시 표시 갱신
     sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
     window.addEventListener('mousemove', dialMove);
     window.addEventListener('touchmove', dialMove, {passive:false});
@@ -1093,6 +1095,7 @@ function createUnit(state){
     const p=('touches' in e)?e.touches[0]:e;
     if('touches' in e) e.preventDefault();
     state.angle = pointToVal(p.clientX, p.clientY);
+    render(); // 🔧 이동 중 계속 갱신
     sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${clampAng180(state.angle)}`);
   }
   function dialUp(){
@@ -1106,6 +1109,7 @@ function createUnit(state){
     if(!state.power) return; e.preventDefault();
     const d=Math.sign(e.deltaY);
     state.angle=clampAng180(state.angle - d*1);
+    render(); // 🔧 휠 스텝마다 렌더
     sendImmediate(`SVS ${state.name} ${speedToDly(state.speed)} ${state.angle}`);
   }, {passive:false});
 
