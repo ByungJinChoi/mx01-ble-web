@@ -554,34 +554,6 @@ function exprFromBlock(b){
       return '('+exprFromBlock(b.getInputTargetBlock('A'))+' '+op+' '+exprFromBlock(b.getInputTargetBlock('B'))+')';
     }
     
-
-case 'logic_compare': {
-      const map={EQ:'==',NEQ:'!=',LT:'<',LTE:'<=',GT:'>',GTE:'>='};
-      const op = map[b.getFieldValue('OP')] || '==';
-      return '('+exprFromBlock(b.getInputTargetBlock('A'))+' '+op+' '+exprFromBlock(b.getInputTargetBlock('B'))+')';
-    }
-    case 'math_arithmetic': {
-      const map={ADD:'+',MINUS:'-',MULTIPLY:'*',DIVIDE:'/',POWER:'^'};
-      const op = map[b.getFieldValue('OP')]||'+';
-      const A = exprFromBlock(b.getInputTargetBlock('A'));
-      const B = exprFromBlock(b.getInputTargetBlock('B'));
-      return '('+A+' '+op+' '+B+')';
-    }
-    case 'math_random_int': {
-      const A = exprFromBlock(b.getInputTargetBlock('FROM')) || '0';
-      const B = exprFromBlock(b.getInputTargetBlock('TO')) || '0';
-      return `random(${A}, ${B})`;
-    }
-    case 'in_touch':  return `TOUCH(${b.getFieldValue('PIN')})`;
-    case 'in_xkeypad':return `XKEY(${b.getFieldValue('PIN')}, ${b.getFieldValue('BTN')})`;
-    case 'in_ir_dist':{
-      const d = numFromInput(b,'DIST',10);
-      return `(IR(${b.getFieldValue('PIN')}) <= ${d})`;
-    }
-  }
-  return '/* cond */';
-}
-
 /* ==================== (추가) 입력 블록 → 아두이노 연동 ==================== */
 /* RET 파서 & 쿼리 대기열 */
 let rxLineBuf = '';
@@ -724,6 +696,33 @@ async function boolEval(node){
   return false;
 }
 /* ==================== (추가 끝) ==================== */
+case 'logic_compare': {
+      const map={EQ:'==',NEQ:'!=',LT:'<',LTE:'<=',GT:'>',GTE:'>='};
+      const op = map[b.getFieldValue('OP')] || '==';
+      return '('+exprFromBlock(b.getInputTargetBlock('A'))+' '+op+' '+exprFromBlock(b.getInputTargetBlock('B'))+')';
+    }
+    case 'math_arithmetic': {
+      const map={ADD:'+',MINUS:'-',MULTIPLY:'*',DIVIDE:'/',POWER:'^'};
+      const op = map[b.getFieldValue('OP')]||'+';
+      const A = exprFromBlock(b.getInputTargetBlock('A'));
+      const B = exprFromBlock(b.getInputTargetBlock('B'));
+      return '('+A+' '+op+' '+B+')';
+    }
+    case 'math_random_int': {
+      const A = exprFromBlock(b.getInputTargetBlock('FROM')) || '0';
+      const B = exprFromBlock(b.getInputTargetBlock('TO')) || '0';
+      return `random(${A}, ${B})`;
+    }
+    case 'in_touch':  return `TOUCH(${b.getFieldValue('PIN')})`;
+    case 'in_xkeypad':return `XKEY(${b.getFieldValue('PIN')}, ${b.getFieldValue('BTN')})`;
+    case 'in_ir_dist':{
+      const d = numFromInput(b,'DIST',10);
+      return `(IR(${b.getFieldValue('PIN')}) <= ${d})`;
+    }
+  }
+  return '/* cond */';
+}
+
 /* 순회/중복 제거 + 코드 생성 */
 function outToS(out){
   const m = String(out||'').match(/^OUT(\d)$/);
@@ -801,15 +800,13 @@ function walkNode(b, list){
     case 'controls_if':{
       const branches=[]; let i=0;
       while(b.getInput('IF'+i)){
-        const condBlock = b.getInputTargetBlock('IF'+i);
-        const cond = exprFromBlock(condBlock);
-        const condAst = condFromBlock(condBlock);
+        const cond = exprFromBlock(b.getInputTargetBlock('IF'+i));
         const inner=[]; const first=b.getInputTargetBlock('DO'+i); walkChain(first, inner);
-        branches.push({cond, condAst, body:inner}); i++;
+        branches.push({cond, body:inner}); i++;
       }
       if(b.getInput('ELSE')){
         const inner=[]; const first=b.getInputTargetBlock('ELSE'); walkChain(first, inner);
-        branches.push({cond:null, condAst:null, body:inner});
+        branches.push({cond:null, body:inner});
       }
       list.push({type:'IF',branches}); break;
     }
@@ -1622,96 +1619,5 @@ $('loadBtn').addEventListener('click', loadProject);
 
 /* ================= 끝 ================= */
 </script>
-
-<script>
-// === Minimal BLE send queue + RET waiter (non-invasive) ===
-(function(){
-  if (window.__XR_SYNC_MINI__) return; window.__XR_SYNC_MINI__ = true;
-  const enc = s => new TextEncoder().encode(s);
-  let busy = false;
-  const q = [];
-  let retWaiter = null;
-  async function _write(line) {
-    if (!window.writeChar) throw new Error('BLE 미연결');
-    const data = enc(line.endsWith('\n') ? line : (line + '\n'));
-    try {
-      if (window.writeChar.writeValueWithoutResponse) await window.writeChar.writeValueWithoutResponse(data);
-      else await window.writeChar.writeValue(data);
-    } catch(e) {
-      await new Promise(r=>setTimeout(r,10));
-      await window.writeChar.writeValue(data);
-    }
-  }
-  async function pump(){
-    if (busy) return;
-    busy = true;
-    try{
-      while(q.length && window.isConnected){
-        const job = q.shift();
-        try {
-          await _write(job.line);
-          if (typeof window.log === 'function') window.log('➡️ ' + job.line.trim());
-          if (job.waitRet) {
-            retWaiter = { resolve: job.resolve, reject: job.reject, deadline: Date.now() + (job.timeout||1500) };
-            while (retWaiter) {
-              if (Date.now() > retWaiter.deadline) { const r = retWaiter.reject; retWaiter = null; r(new Error('RET 시간초과')); break; }
-              await new Promise(r=>setTimeout(r,20));
-            }
-          } else {
-            await new Promise(r=>setTimeout(r, 15));
-            job.resolve();
-          }
-        } catch(err) {
-          job.reject(err);
-        }
-      }
-    } finally { busy = false; }
-  }
-  window.bleSend = (line)=> new Promise((res,rej)=>{ q.push({ line, waitRet:false, resolve:res, reject:rej }); pump(); });
-  window.bleSendAndWaitRET = (line, timeout)=> new Promise((res,rej)=>{ q.push({ line, waitRet:true, timeout, resolve:res, reject:rej }); pump(); });
-
-  // tap into onBleLine for RET 1/0
-  const origOn = window.onBleLine || function(){};
-  window.onBleLine = function(line){
-    try {
-      const m = String(line||'').match(/^\s*RET\s+([01])\s*$/);
-      if (m) {
-        const v = (m[1] === '1');
-        if (retWaiter) { const r = retWaiter.resolve; retWaiter = null; r(v); return; }
-      }
-    } catch(e){}
-    try { origOn(line); } catch(e){}
-  };
-
-  // override sendAndWaitRET to use queue
-  if (typeof window.sendAndWaitRET === 'function') {
-    const orig = window.sendAndWaitRET;
-    window.sendAndWaitRET = async function(cmd, timeout){
-      if (!window.isConnected || !window.writeChar) throw new Error('BLE 미연결');
-      return await window.bleSendAndWaitRET(cmd, timeout||1500);
-    };
-  }
-
-  // route generic CMD through queue
-  if (typeof window.sendCmdIfActive === 'function') {
-    const origSend = window.sendCmdIfActive;
-    window.sendCmdIfActive = async function(s, myRun){
-      if (myRun && myRun.canceled && myRun.canceled()) return;
-      if (!window.writeChar) throw new Error('BLE 미연결');
-      await window.bleSend(s);
-    };
-  }
-
-  // clear queue on disconnect
-  if (typeof window.setConnected === 'function') {
-    const origSet = window.setConnected;
-    window.setConnected = function(v){
-      try { origSet(v); } catch(e){}
-      if (!v) { q.length = 0; retWaiter = null; }
-    };
-  }
-})();
-</script>
-
 </body>
 </html>
