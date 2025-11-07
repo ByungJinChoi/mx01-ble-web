@@ -554,6 +554,34 @@ function exprFromBlock(b){
       return '('+exprFromBlock(b.getInputTargetBlock('A'))+' '+op+' '+exprFromBlock(b.getInputTargetBlock('B'))+')';
     }
     
+
+case 'logic_compare': {
+      const map={EQ:'==',NEQ:'!=',LT:'<',LTE:'<=',GT:'>',GTE:'>='};
+      const op = map[b.getFieldValue('OP')] || '==';
+      return '('+exprFromBlock(b.getInputTargetBlock('A'))+' '+op+' '+exprFromBlock(b.getInputTargetBlock('B'))+')';
+    }
+    case 'math_arithmetic': {
+      const map={ADD:'+',MINUS:'-',MULTIPLY:'*',DIVIDE:'/',POWER:'^'};
+      const op = map[b.getFieldValue('OP')]||'+';
+      const A = exprFromBlock(b.getInputTargetBlock('A'));
+      const B = exprFromBlock(b.getInputTargetBlock('B'));
+      return '('+A+' '+op+' '+B+')';
+    }
+    case 'math_random_int': {
+      const A = exprFromBlock(b.getInputTargetBlock('FROM')) || '0';
+      const B = exprFromBlock(b.getInputTargetBlock('TO')) || '0';
+      return `random(${A}, ${B})`;
+    }
+    case 'in_touch':  return `TOUCH(${b.getFieldValue('PIN')})`;
+    case 'in_xkeypad':return `XKEY(${b.getFieldValue('PIN')}, ${b.getFieldValue('BTN')})`;
+    case 'in_ir_dist':{
+      const d = numFromInput(b,'DIST',10);
+      return `(IR(${b.getFieldValue('PIN')}) <= ${d})`;
+    }
+  }
+  return '/* cond */';
+}
+
 /* ==================== (추가) 입력 블록 → 아두이노 연동 ==================== */
 /* RET 파서 & 쿼리 대기열 */
 let rxLineBuf = '';
@@ -696,33 +724,6 @@ async function boolEval(node){
   return false;
 }
 /* ==================== (추가 끝) ==================== */
-case 'logic_compare': {
-      const map={EQ:'==',NEQ:'!=',LT:'<',LTE:'<=',GT:'>',GTE:'>='};
-      const op = map[b.getFieldValue('OP')] || '==';
-      return '('+exprFromBlock(b.getInputTargetBlock('A'))+' '+op+' '+exprFromBlock(b.getInputTargetBlock('B'))+')';
-    }
-    case 'math_arithmetic': {
-      const map={ADD:'+',MINUS:'-',MULTIPLY:'*',DIVIDE:'/',POWER:'^'};
-      const op = map[b.getFieldValue('OP')]||'+';
-      const A = exprFromBlock(b.getInputTargetBlock('A'));
-      const B = exprFromBlock(b.getInputTargetBlock('B'));
-      return '('+A+' '+op+' '+B+')';
-    }
-    case 'math_random_int': {
-      const A = exprFromBlock(b.getInputTargetBlock('FROM')) || '0';
-      const B = exprFromBlock(b.getInputTargetBlock('TO')) || '0';
-      return `random(${A}, ${B})`;
-    }
-    case 'in_touch':  return `TOUCH(${b.getFieldValue('PIN')})`;
-    case 'in_xkeypad':return `XKEY(${b.getFieldValue('PIN')}, ${b.getFieldValue('BTN')})`;
-    case 'in_ir_dist':{
-      const d = numFromInput(b,'DIST',10);
-      return `(IR(${b.getFieldValue('PIN')}) <= ${d})`;
-    }
-  }
-  return '/* cond */';
-}
-
 /* 순회/중복 제거 + 코드 생성 */
 function outToS(out){
   const m = String(out||'').match(/^OUT(\d)$/);
@@ -800,13 +801,15 @@ function walkNode(b, list){
     case 'controls_if':{
       const branches=[]; let i=0;
       while(b.getInput('IF'+i)){
-        const cond = exprFromBlock(b.getInputTargetBlock('IF'+i));
+        const cb=b.getInputTargetBlock('IF'+i);
+        const cond = exprFromBlock(cb);
+        const condAst = condFromBlock(cb);
         const inner=[]; const first=b.getInputTargetBlock('DO'+i); walkChain(first, inner);
-        branches.push({cond, body:inner}); i++;
+        branches.push({cond, condAst, body:inner}); i++;
       }
       if(b.getInput('ELSE')){
         const inner=[]; const first=b.getInputTargetBlock('ELSE'); walkChain(first, inner);
-        branches.push({cond:null, body:inner});
+        branches.push({cond:null, condAst:null, body:inner});
       }
       list.push({type:'IF',branches}); break;
     }
