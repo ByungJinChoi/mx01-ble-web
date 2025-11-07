@@ -553,7 +553,150 @@ function exprFromBlock(b){
       const op = b.getFieldValue('OP')==='AND'?'&&':'||';
       return '('+exprFromBlock(b.getInputTargetBlock('A'))+' '+op+' '+exprFromBlock(b.getInputTargetBlock('B'))+')';
     }
+    
+/* ==================== (추가) 입력 블록 → 아두이노 연동 ==================== */
+/* RET 파서 & 쿼리 대기열 */
+let rxLineBuf = '';
+const retWaiters = []; // queue of resolvers
+function onBleLine(line){
+  // 예: "RET 1" 또는 "RET 0"
+  try{
+    const m = String(line||'').match(/^\s*RET\s+([01])\s*$/);
+    if(m){
+      const v = (m[1] === '1');
+      const fn = retWaiters.shift();
+      if (typeof fn === 'function') fn(v);
+    }
+  }catch(_){}
+}
+function onBleChunk(text){
+  rxLineBuf += String(text||'').replace(/\r/g,'');
+  let idx;
+  while((idx = rxLineBuf.indexOf('\n')) !== -1){
+    const line = rxLineBuf.slice(0, idx);
+    rxLineBuf = rxLineBuf.slice(idx + 1);
+    onBleLine(line);
+  }
+}
+async function sendAndWaitRET(cmd, timeout=1500){
+  if(!writeChar) throw new Error('BLE 미연결');
+  let resolved = false;
+  const p = new Promise((resolve, reject)=>{
+    const wrapper = (v)=>{ resolved=true; resolve(v); };
+    retWaiters.push(wrapper);
+    setTimeout(()=>{
+      if(!resolved){
+        const i = retWaiters.indexOf(wrapper);
+        if(i>=0) retWaiters.splice(i,1);
+        reject(new Error('RET 시간초과'));
+      }
+    }, timeout);
+  });
+  await writeChar.writeValue(enc(cmd + '\\n'));
+  log('➡️ ' + cmd);
+  return await p;
+}
+
+/* 조건 AST 생성기(입력 블록 3종만 지원 + 기본 논리 연산) */
+function condFromBlock(b){
+  if(!b) return {type:'lit', v:false};
+  switch(b.type){
+    case 'logic_boolean':
+      return {type:'lit', v: (b.getFieldValue('BOOL')==='TRUE')};
+    case 'logic_negate':
+      return {type:'not', a: condFromBlock(b.getInputTargetBlock('BOOL')) };
+    case 'logic_operation': {
+      const isAnd = b.getFieldValue('OP')==='AND';
+      return {type: isAnd ? 'and' : 'or',
+              a: condFromBlock(b.getInputTargetBlock('A')),
+              b: condFromBlock(b.getInputTargetBlock('B'))};
+    }
+    /* === 입력 3종 === */
+    case 'in_touch': // SW
+      return {type:'SW', pin:b.getFieldValue('PIN')};
+    case 'in_ir_dist': { // IRS (핀, cm 이내)
+      const d = numFromInput(b,'DIST',10);
+      return {type:'IRS', pin:b.getFieldValue('PIN'), cm: Math.max(1, Math.round(d))};
+    }
+    case 'in_xkeypad': { // XKEY (핀, 버튼 Bn → n)
+      const raw = String(b.getFieldValue('BTN')||'B1');
+      const n = parseInt(raw.replace(/[^0-9]/g,''),10) || 1;
+      return {type:'XKEY', pin:b.getFieldValue('PIN'), val:n};
+    }
+    /* 비교/숫자 연산(간단 지원) */
     case 'logic_compare': {
+      const map={EQ:'==',NEQ:'!=',LT:'<',LTE:'<=',GT:'>',GTE:'>='};
+      return {type:'cmp', op: map[b.getFieldValue('OP')]||'==',
+              a: condFromBlock(b.getInputTargetBlock('A')),
+              b: condFromBlock(b.getInputTargetBlock('B'))};
+    }
+    case 'math_number':
+      return {type:'num', v: Number(b.getFieldValue('NUM')||0)};
+    case 'math_arithmetic':
+      return {type:'arith', op:b.getFieldValue('OP')||'ADD',
+              a: condFromBlock(b.getInputTargetBlock('A')),
+              b: condFromBlock(b.getInputTargetBlock('B'))};
+  }
+  return {type:'lit', v:false};
+}
+
+/* AST 평가기 */
+function numEval(node){
+  if(!node) return 0;
+  switch(node.type){
+    case 'num': return Number(node.v)||0;
+    case 'lit': return node.v ? 1 : 0;
+    case 'arith': {
+      const A=numEval(node.a), B=numEval(node.b);
+      switch(node.op){
+        case 'ADD': return A+B;
+        case 'MINUS': return A-B;
+        case 'MULTIPLY': return A*B;
+        case 'DIVIDE': return B? A/B : 0;
+        case 'POWER': return Math.pow(A,B);
+      }
+      return 0;
+    }
+    default: return 0;
+  }
+}
+async function boolEval(node){
+  if(!node) return false;
+  switch(node.type){
+    case 'lit': return !!node.v;
+    case 'num': return !!numEval(node);
+    case 'not': return !(await boolEval(node.a));
+    case 'and': {
+      const L=await boolEval(node.a);
+      if(!L) return false;
+      return await boolEval(node.b);
+    }
+    case 'or': {
+      const L=await boolEval(node.a);
+      if(L) return true;
+      return await boolEval(node.b);
+    }
+    case 'cmp': {
+      const A=numEval(node.a), B=numEval(node.b);
+      switch(node.op){
+        case '==': return A==B;
+        case '!=': return A!=B;
+        case '<':  return A<B;
+        case '<=': return A<=B;
+        case '>':  return A>B;
+        case '>=': return A>=B;
+      }
+      return false;
+    }
+    /* === 아두이노 쿼리 === */
+    case 'SW':   return await sendAndWaitRET(`SW ${node.pin}`);
+    case 'IRS':  return await sendAndWaitRET(`IRS ${node.pin} ${node.cm}`);
+    case 'XKEY': return await sendAndWaitRET(`XKEY ${node.pin} ${node.val}`);
+  }
+  return false;
+}
+/* ==================== (추가 끝) ==================== */
+case 'logic_compare': {
       const map={EQ:'==',NEQ:'!=',LT:'<',LTE:'<=',GT:'>',GTE:'>='};
       const op = map[b.getFieldValue('OP')] || '==';
       return '('+exprFromBlock(b.getInputTargetBlock('A'))+' '+op+' '+exprFromBlock(b.getInputTargetBlock('B'))+')';
@@ -668,11 +811,8 @@ function walkNode(b, list){
       list.push({type:'IF',branches}); break;
     }
     case 'wait_seconds':{ const s=numFromInput(b,'SEC',1); if(s>0) list.push({type:'W',args:[s*1000]}); break; }
-    case 'control_wait_until':{ const cond=exprFromBlock(b.getInputTargetBlock('COND')); list.push({type:'WAIT_UNTIL',cond}); break; }
-    case 'control_repeat_until':{
-      const cond=exprFromBlock(b.getInputTargetBlock('COND'));
-      const inner=[]; const first=b.getInputTargetBlock('DO'); walkChain(first, inner);
-      list.push({type:'REPEAT_UNTIL',cond,body:inner}); break; }
+    case 'control_wait_until':{ const cb=b.getInputTargetBlock('COND'); const cond=exprFromBlock(cb); const condAst=condFromBlock(cb); list.push({type:'WAIT_UNTIL',cond,condAst}); break; }
+    case 'control_repeat_until':{ const cb=b.getInputTargetBlock('COND'); const cond=exprFromBlock(cb); const condAst=condFromBlock(cb); const inner=[]; const first=b.getInputTargetBlock('DO'); walkChain(first, inner); list.push({type:'REPEAT_UNTIL',cond,condAst,body:inner}); break; }
   }
 }
 function walkChain(start, list){ for(let n=start; n; n=n.getNextBlock()) walkNode(n, list); }
@@ -838,9 +978,7 @@ async function connectBLE(){
     if(!writeChar) throw new Error('write 특성을 찾지 못했습니다.');
     if(notifyChar){
       await notifyChar.startNotifications();
-      notifyChar.addEventListener('characteristicvaluechanged',ev=>{
-        const v=new TextDecoder().decode(ev.target.value); log('⬅️ '+v);
-      });
+      notifyChar.addEventListener('characteristicvaluechanged',ev=>{ const v=new TextDecoder().decode(ev.target.value); log('⬅️ '+v); onBleChunk(v); });
     }
     if(connectToken!==myToken) return;
     setConnected(true);
@@ -881,37 +1019,70 @@ btnRun.onclick = async ()=>{
     const myRunId = ++runToken;
     const myRun = { canceled: ()=> myRunId !== runToken || !isRunning };
 
-    const runLoop = async(list)=>{
-      for(let i=0;i<list.length;i++){
+    
+const runLoop = async(list)=>{
+  for(let i=0;i<list.length;i++){
+    if(myRun.canceled()) return;
+    const ins=list[i];
+    if(ins.type==='CMD'){
+      await sendCmdIfActive(ins.s, myRun);
+    }
+    else if(ins.type==='W'){
+      await sleepCancelable(ins.args[0], myRun);
+    }
+    else if(ins.type==='FOR'){
+      for(let k=0; k<ins.count; k++){
         if(myRun.canceled()) return;
-        const ins=list[i];
-        if(ins.type==='CMD'){
-          await sendCmdIfActive(ins.s, myRun);
-        }else if(ins.type==='W'){
-          await sleepCancelable(ins.args[0], myRun);
-        }else if(ins.type==='FOR'){
-          for(let k=0; k<ins.count; k++){
-            if(myRun.canceled()) return;
-            await runLoop(ins.body);
-          }
-        }else if(ins.type==='IF'){
-          /* 웹 런타임 조건평가 없음 */
-        }else if(ins.type==='WAIT_UNTIL'){
-          await sleepCancelable(50, myRun); i--;
-        }else if(ins.type==='REPEAT_UNTIL'){
-          let guard=0;
-          while(!myRun.canceled() && guard<200){
-            await runLoop(ins.body);
-            await sleepCancelable(50, myRun);
-            guard++;
-          }
-        }else if(ins.type==='LOOP_INF'){
-          while(!myRun.canceled()){
-            await runLoop(ins.body);
+        await runLoop(ins.body);
+      }
+    }
+    else if(ins.type==='IF'){
+      for(const br of ins.branches){
+        if(myRun.canceled()) return;
+        if(br.condAst==null){ // else
+          await runLoop(br.body); break;
+        }else{
+          try{
+            const ok = await boolEval(br.condAst);
+            if(ok){ await runLoop(br.body); break; }
+          }catch(e){
+            console.error(e); log('⚠️ IF 조건 평가 오류: '+e);
           }
         }
       }
-    };
+    }
+    else if(ins.type==='WAIT_UNTIL'){
+      // condAst가 true가 될 때까지 대기(50ms 폴링)
+      try{
+        while(!myRun.canceled()){
+          const ok = await boolEval(ins.condAst);
+          if(ok) break;
+          await sleepCancelable(50, myRun);
+        }
+      }catch(e){
+        console.error(e); log('⚠️ WAIT_UNTIL 평가 오류: '+e);
+      }
+    }
+    else if(ins.type==='REPEAT_UNTIL'){
+      try{
+        while(!myRun.canceled()){
+          await runLoop(ins.body);
+          const stop = await boolEval(ins.condAst);
+          if(stop) break;
+          await sleepCancelable(20, myRun);
+        }
+      }catch(e){
+        console.error(e); log('⚠️ REPEAT_UNTIL 평가 오류: '+e);
+      }
+    }
+    else if(ins.type==='LOOP_INF'){
+      while(!myRun.canceled()){
+        await runLoop(ins.body);
+      }
+    }
+  }
+};
+
     try{ await runLoop(prog); }
     catch(e){ console.error(e); log('⚠️ 실행 오류: '+e); }
     finally{ if(!myRun.canceled()) setRunning(false); }
