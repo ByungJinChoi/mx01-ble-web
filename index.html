@@ -797,19 +797,7 @@ function walkNode(b, list){
       const times=Math.max(0, numFromInput(b,'TIMES',1));
       const inner=[]; const first=b.getInputTargetBlock('DO'); walkChain(first, inner);
       list.push({type:'FOR',count:times,body:inner}); break; }
-    case 'controls_if':{
-      const branches=[]; let i=0;
-      while(b.getInput('IF'+i)){
-        const cond = exprFromBlock(b.getInputTargetBlock('IF'+i));
-        const inner=[]; const first=b.getInputTargetBlock('DO'+i); walkChain(first, inner);
-        branches.push({cond, body:inner}); i++;
-      }
-      if(b.getInput('ELSE')){
-        const inner=[]; const first=b.getInputTargetBlock('ELSE'); walkChain(first, inner);
-        branches.push({cond:null, body:inner});
-      }
-      list.push({type:'IF',branches}); break;
-    }
+    case 'controls_if':{  const branches=[]; let i=0;  while(b.getInput('IF'+i)){    const cb = b.getInputTargetBlock('IF'+i);    const cond = exprFromBlock(cb);    const condAst = condFromBlock(cb);    const inner=[]; const first=b.getInputTargetBlock('DO'+i); walkChain(first, inner);    branches.push({cond, condAst, body:inner}); i++;  }  if(b.getInput('ELSE')){    const inner=[]; const first=b.getInputTargetBlock('ELSE'); walkChain(first, inner);    branches.push({cond:null, condAst:null, body:inner});  }  list.push({type:'IF',branches}); break; }
     case 'wait_seconds':{ const s=numFromInput(b,'SEC',1); if(s>0) list.push({type:'W',args:[s*1000]}); break; }
     case 'control_wait_until':{ const cb=b.getInputTargetBlock('COND'); const cond=exprFromBlock(cb); const condAst=condFromBlock(cb); list.push({type:'WAIT_UNTIL',cond,condAst}); break; }
     case 'control_repeat_until':{ const cb=b.getInputTargetBlock('COND'); const cond=exprFromBlock(cb); const condAst=condFromBlock(cb); const inner=[]; const first=b.getInputTargetBlock('DO'); walkChain(first, inner); list.push({type:'REPEAT_UNTIL',cond,condAst,body:inner}); break; }
