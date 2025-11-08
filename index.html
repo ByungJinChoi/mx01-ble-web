@@ -234,6 +234,31 @@
   .dot{ transition: fill .12s ease, filter .12s ease, r .12s ease, stroke .12s ease; }
   .dot.blue{ stroke:#1e3a8a; stroke-width:.6; }
   .dot.red { fill:#ef4444; stroke:#7f1d1d; stroke-width:.6; filter: drop-shadow(0 0 6px rgba(239,68,68,.9)); }
+
+  /* === 추가: 서보 번호 드롭다운 & number 스핀 제거 === */
+  .sno-select{
+    position:absolute; right:calc(26px * var(--servoScale) + 8px); top:50%; transform:translateY(-50%);
+    height:calc(18px * var(--servoScale)); min-width:calc(48px * var(--servoScale));
+    background:#ffffff; border:1px solid #d1d5db; border-radius:4px;
+    font-size:calc(10px * var(--servoScale)); line-height:1; padding:0 calc(6px * var(--servoScale));
+    color:#111827;
+  }
+  /* number input spinner 제거 */
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  input[type=number]{ -moz-appearance:textfield; }
+
+
+  .trash-top{
+    position:absolute; left:calc(4px * var(--servoScale)); top:50%; transform:translateY(-50%);
+    width:calc(18px * var(--servoScale)); height:calc(18px * var(--servoScale));
+    border-radius:4px; display:grid; place-items:center;
+    background:#ffffff; border:1px solid #d1d5db; color:#111827;
+    font-size:calc(11px * var(--servoScale)); font-weight:900;
+    cursor:pointer; user-select:none;
+  }
+  .trash-top:hover{ background:#ef4444; border-color:#b91c1c; color:#fff; }
+
 </style>
 </head>
 <body>
@@ -481,8 +506,8 @@ Blockly.defineBlocksWithJsonArray([
     "message0":"멀티 서보 (개수: %1)  %2 %3",
     "args0":[
       { "type":"field_label_serializable", "name":"COUNT", "text":"0" },
-      { "type":"field_image", "name":"CFG", "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='46' height='20'><rect x='0' y='0' width='46' height='20' rx='4' ry='4' fill='%23f3f4f6' stroke='%239ca3af'/><text x='23' y='14' font-size='12' text-anchor='middle' font-family='system-ui,sans-serif' fill='%23000'>설정</text></svg>", "width":46, "height":20, "alt":"설정" },
-      { "type":"field_image", "name":"DUP", "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='46' height='20'><rect x='0' y='0' width='46' height='20' rx='4' ry='4' fill='%23f3f4f6' stroke='%239ca3af'/><text x='23' y='14' font-size='12' text-anchor='middle' font-family='system-ui,sans-serif' fill='%23000'>복사</text></svg>", "width":46, "height":20, "alt":"복사" }
+      { "type":"field_image", "name":"CFG", "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='24' viewBox='0 0 64 24'><rect x='0' y='0' width='64' height='24' rx='6' ry='6' fill='%238b5e34'/><text x='32' y='16' text-anchor='middle' font-size='12' font-weight='700' fill='%23ffffff'>설정</text></svg>", "width":64, "height":24, "alt":"설정" },
+      { "type":"field_image", "name":"DUP", "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='24' viewBox='0 0 64 24'><rect x='0' y='0' width='64' height='24' rx='6' ry='6' fill='%238b5e34'/><text x='32' y='16' text-anchor='middle' font-size='12' font-weight='700' fill='%23ffffff'>복사</text></svg>", "width":64, "height":24, "alt":"복사" }
     ],
     "previousStatement":null, "nextStatement":null, "colour": 30,
     "extensions": ["multi_servo_cfg"]
@@ -1346,7 +1371,21 @@ function createUnit(state){
 
   const handle = document.createElement('div'); handle.className='handle'; handle.textContent=name;
   const pwrTop = document.createElement('div'); pwrTop.className='pwr-top'+(state.power? '' : ' off'); pwrTop.textContent=state.power?'ON':'OFF';
-  handle.appendChild(pwrTop); unit.appendChild(handle);
+  const delTop = document.createElement('div'); delTop.className='trash-top'; delTop.title='삭제'; delTop.textContent='🗑';
+delTop.addEventListener('click', (e)=>{ e.stopPropagation(); try{ unit.remove(); if(currentBlock){ const cfg = multiServoConfigs.get(currentBlock.id) || {units:[]}; const i = cfg.units.findIndex(u=>u.name===name); if(i>=0) cfg.units.splice(i,1); currentBlock.setFieldValue(String(cfg.units.length), 'COUNT'); multiServoConfigs.set(currentBlock.id, cfg);} }catch(_){}
+});
+handle.appendChild(delTop);
+handle.appendChild(pwrTop); unit.appendChild(handle);
+  // === 추가: 서보 번호 드롭다운 (S1~S20) ===
+  const sel = document.createElement('select'); sel.className='sno-select'; sel.title='서보 번호 선택';
+  for(let i=1;i<=20;i++){ const o=document.createElement('option'); const nm='S'+i; o.value=nm; o.textContent=nm; sel.appendChild(o); }
+  sel.value = name;
+  sel.addEventListener('change', ()=>{ 
+    unit.dataset.name = sel.value; 
+    state.name = sel.value; 
+  });
+  handle.appendChild(sel);
+
 
   const row = document.createElement('div'); row.className='row';
   const num = document.createElement('div'); num.className='numbox';
@@ -1491,7 +1530,7 @@ function createUnit(state){
 
   function unitDown(e){
     if(e.currentTarget !== state.els.handle) return;
-    if(e.target.closest('.pwr-top')) return;
+    if(e.target.closest('.pwr-top') || e.target.closest('.trash-top')) return;
     const rect=state.els.unit.getBoundingClientRect();
     const p=('touches' in e)?e.touches[0]:e;
     const dragDx=p.clientX-rect.left, dragDy=p.clientY-rect.top;
