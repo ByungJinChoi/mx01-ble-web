@@ -375,6 +375,17 @@
   </div>
 
 <script>
+
+// === 변수 블록 한국어 라벨 적용 ===
+if (typeof Blockly !== 'undefined' && Blockly.Msg) {
+  // 'set %1 to %2' -> '%1 설정하기 %2'
+  Blockly.Msg['VARIABLES_SET'] = '%1 설정하기 %2';
+  // 'change %1 by %2' -> '%1 %2 만큼 변경하기'
+  Blockly.Msg['MATH_CHANGE_TITLE'] = '%1 %2 만큼 변경하기';
+  // 기본 변수명 라벨(선택)
+  if (!Blockly.Msg['MATH_CHANGE_TITLE_ITEM']) Blockly.Msg['MATH_CHANGE_TITLE_ITEM'] = '변수';
+}
+
 /* ================= Blockly 기본 설정 ================= */
 class XroboZelosProvider extends Blockly.zelos.ConstantProvider {
   constructor(){ super(); this.ADD_START_HATS = true; }
@@ -898,13 +909,7 @@ function walkChain(start, list){ for(let n=start; n; n=n.getNextBlock()) walkNod
 
 function normalizeProgram(list){
   const out=[];
-  try{
-    const __vars = getAllVarNames();
-    if(__vars && __vars.length){
-      const __decls = __vars.map(n=>`int ${cIdent(n)} = 0;`);
-      out.unshift('', ...__decls);
-    }
-  }catch(_){}
+  
 
   for(const ins of list){
     if(ins.type==='CMD'){
@@ -1145,10 +1150,7 @@ btnRun.onclick = async ()=>{
     const myRun = { canceled: ()=> myRunId !== runToken || !isRunning };
     // 변수 런타임 초기화(기본 0)
     rtVars = {};
-    try{
-      const __vars = getAllVarNames();
-      for(const n of __vars){ rtVars[n] = 0; }
-    }catch(_){}
+    
 
     const runLoop = async(list)=>{
       for(let i=0;i<list.length;i++){
