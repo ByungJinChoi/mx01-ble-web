@@ -68,6 +68,7 @@
   }
   #connectToggle{ background:#2563eb; color:#fff; }
   #rtToggle.on{ background:#2563eb; color:#fff; }
+  #rtToggle:not(.on){ background:#f59e0b; color:#fff; }
   #runToggle{ background:#16a34a; color:#fff; }
   #fsBtn{ background:#111827; color:#fff; }
 
@@ -480,12 +481,8 @@ Blockly.defineBlocksWithJsonArray([
     "message0":"멀티 서보 (개수: %1)  %2 %3",
     "args0":[
       { "type":"field_label_serializable", "name":"COUNT", "text":"0" },
-      { "type":"field_image", "name":"CFG",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M10.325 4.317a1 1 0 0 1 1.35-.447l.162.08l1.028.514a8.9 8.9 0  0 1 1.46-.419l.21-1.146A1 1 0  0 1 15.52 2h2.96a1 1 0  0 1 .986.836l.21 1.146c.514.126 1.007.297 1.46.52l1.029-.515a1 1 0  0  1 1.33.427l1.48 2.564a1 1 0  0  1-.255 1.287l-.94.767c.082.5.124 1.013.124 1.535s-.042 1.035-.124 1.535l.94.767a1 1 0  0  1 .255 1.287l-1.48 2.564a1 1 0  0  1-1.33.427l-1.028-.515a8.9 8.9 0  0  1-1.46.52l-.21 1.145A1 1 0  0  1 18.48 22h-2.96a1  1 0  0  1-.986-.836l-.21-1.145a8.9 8.9 0  0  1-1.459-.419l-1.028.514a1 1 0  0  1-1.35-.447l-1.48-2.564a1 1 0  0  1 .255-1.287l.94-.767A7.91 7.91 0  0  1 10 12c0-.522.042-1.035.124-1.535l-.94-.767a1 1 0  0  1-.255-1.287zM17 9a3 3 0  1 0 0 6a3 3 0  0  0 0-6' /></svg>",
-        "width":20, "height":20, "alt":"설정" },
-      { "type":"field_image", "name":"DUP",
-        "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24'><path fill='%23000' d='M16 1H4a2 2 0  0  0-2 2v12h2V3h12z'/><path fill='%23000' d='M20 5H8a2 2 0  0 0-2 2v14h14a2 2 0  0 0 2-2V7a2 2 0  0  0-2-2m0 16H8V7h12z'/></svg>",
-        "width":20, "height":20, "alt":"복사" }
+      { "type":"field_image", "name":"CFG", "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='46' height='20'><rect x='0' y='0' width='46' height='20' rx='4' ry='4' fill='%23f3f4f6' stroke='%239ca3af'/><text x='23' y='14' font-size='12' text-anchor='middle' font-family='system-ui,sans-serif' fill='%23000'>설정</text></svg>", "width":46, "height":20, "alt":"설정" },
+      { "type":"field_image", "name":"DUP", "src":"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='46' height='20'><rect x='0' y='0' width='46' height='20' rx='4' ry='4' fill='%23f3f4f6' stroke='%239ca3af'/><text x='23' y='14' font-size='12' text-anchor='middle' font-family='system-ui,sans-serif' fill='%23000'>복사</text></svg>", "width":46, "height":20, "alt":"복사" }
     ],
     "previousStatement":null, "nextStatement":null, "colour": 30,
     "extensions": ["multi_servo_cfg"]
@@ -1062,8 +1059,12 @@ function setRealtime(on){
   btnRt.classList.toggle('on', realTime);
   btnRt.textContent = realTime ? '실시간: ON' : '실시간: OFF';
 }
-btnRt.addEventListener('click', ()=> setRealtime(!realTime));
-
+btnRt.addEventListener('click', ()=>{
+  setRealtime(!realTime);
+  if(servoModal.classList.contains('show')){
+    realTime ? rtStartTicker() : rtStopTicker();
+  }
+});
 async function sendImmediate(s){
   if(!realTime) return;
   if(!writeChar) return;
@@ -1266,6 +1267,56 @@ const applyBgBtn = document.getElementById('applyBg');
 const bgUrlInput = document.getElementById('bgUrl');
 const closeModalBtn = document.getElementById('closeModal');
 
+// === 0.1s 간격 실시간 전송(멀티 서보 모달 전용) ===
+let rtTimer = null;
+let rtPrev = new Map();
+
+function rtStartTicker(){
+  if(rtTimer) return;
+  rtTimer = setInterval(rtTick, 100); // 0.1초
+}
+function rtStopTicker(){
+  if(rtTimer){ clearInterval(rtTimer); rtTimer = null; }
+  rtPrev.clear();
+}
+function collectUnitsSnapshot(){
+  const list = [];
+  try{
+    const nodes = stageEl.querySelectorAll('.unit');
+    nodes.forEach(u=>{
+      const name = u.dataset.name || 'S1';
+      const inp  = u.querySelector('.numbox input');
+      const spd  = u.querySelector('.speedbox select');
+      const on   = !u.querySelector('.pwr-top')?.classList.contains('off');
+      const ang  = clampAng180(Number(inp?.value)||90);
+      const sp   = Math.max(0, Math.min(20, Number(spd?.value)||10));
+      list.push({name, angle:ang, speed:sp, power:on});
+    });
+  }catch(_){}
+  return list;
+}
+// 변경 감지용 더미(이벤트에서 호출)
+function rtMarkDirty(){ /* 주기틱에서 DOM을 읽어 반영 */ }
+
+async function rtTick(){
+  if(!realTime || !writeChar) return;
+  const snap = collectUnitsSnapshot();
+  for(const u of snap){
+    const p = rtPrev.get(u.name);
+    const changed = !p || p.angle!==u.angle || p.speed!==u.speed || p.power!==u.power;
+    if(changed){
+      rtPrev.set(u.name, {...u});
+      if(u.power){
+        try{
+          await writeChar.writeValue(enc(`SVS ${u.name} ${u.speed} ${u.angle}\n`));
+          log('➡️ ' + `SVS ${u.name} ${u.speed} ${u.angle}`);
+        }catch(_){ /* 전송 실패 무시 */ }
+      }
+    }
+  }
+}
+
+
 let currentBlock = null;
 let unitSeq = 0;
 const clamp=(v,min,max)=>Math.min(max,Math.max(min,v));
@@ -1372,7 +1423,7 @@ function createUnit(state){
     state.els.pwrTop.classList.toggle('off', !state.power);
     state.els.pwrTop.textContent = state.power?'ON':'OFF';
     if(state.power){
-      sendImmediate(`SVS ${state.name} ${state.speed} ${clampAng180(state.angle)}`);
+      rtMarkDirty();
     }
     render();
   });
@@ -1382,7 +1433,7 @@ function createUnit(state){
     if(Number.isFinite(v)){
       state.angle=clampAng180(v);
       render();
-      sendImmediate(`SVS ${state.name} ${state.speed} ${state.angle}`);
+      rtMarkDirty();
     }else{
       state.els.inp.value=String(clampAng180(state.angle));
     }
@@ -1390,7 +1441,7 @@ function createUnit(state){
   state.els.spdSel.addEventListener('change', ()=>{
     state.speed = Math.max(0, Math.min(20, parseInt(state.els.spdSel.value||'10',10)||10));
     render();
-    sendImmediate(`SVS ${state.name} ${state.speed} ${clampAng180(state.angle)}`);
+    rtMarkDirty();
   });
 
   function setDotActive(on){
@@ -1412,7 +1463,7 @@ function createUnit(state){
     setDotActive(true);
     const p=('touches' in e)?e.touches[0]:e;
     state.angle = pointToVal(p.clientX, p.clientY);
-    render(); sendImmediate(`SVS ${state.name} ${state.speed} ${state.angle}`);
+    render(); rtMarkDirty();
     window.addEventListener('mousemove', dialMove);
     window.addEventListener('touchmove', dialMove, {passive:false});
     window.addEventListener('mouseup', dialUp, {once:true});
@@ -1423,7 +1474,7 @@ function createUnit(state){
     const p=('touches' in e)?e.touches[0]:e;
     if('touches' in e) e.preventDefault();
     state.angle = pointToVal(p.clientX, p.clientY);
-    render(); sendImmediate(`SVS ${state.name} ${state.speed} ${state.angle}`);
+    render(); rtMarkDirty();
   }
   function dialUp(){
     setDotActive(false);
@@ -1435,7 +1486,7 @@ function createUnit(state){
   state.els.svg.addEventListener('wheel', e=>{
     if(!state.power) return; e.preventDefault();
     const d=Math.sign(e.deltaY);
-    state.angle=clampAng180(state.angle - d*1); render(); sendImmediate(`SVS ${state.name} ${state.speed} ${state.angle}`);
+    state.angle=clampAng180(state.angle - d*1); render(); rtMarkDirty();
   }, {passive:false});
 
   function unitDown(e){
