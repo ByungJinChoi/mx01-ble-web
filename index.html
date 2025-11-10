@@ -2249,6 +2249,18 @@ updateLiveBtn();
 liveBtn.addEventListener('click', function(){
   live = !live;
   updateLiveBtn();
+  try{
+    if (typeof setRealtime === 'function') {
+      setRealtime(live);
+      // 멀티서보 모달이 열려 있을 때는 주기 전송 타이커도 동일하게 동기화
+      if (typeof servoModal !== 'undefined' && servoModal && servoModal.classList && servoModal.classList.contains('show')) {
+        try {
+          if (live) { if (typeof rtStartTicker === 'function') rtStartTicker(); }
+          else { if (typeof rtStopTicker === 'function') rtStopTicker(); }
+        } catch(_){}
+      }
+    }
+  }catch(_){}
 });
 
 
