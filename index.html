@@ -17,6 +17,7 @@
     lb.dataset.boundLoad = '1';
   }
 })();
+
 </script>
 <style>
   :root{
@@ -371,7 +372,12 @@
       
 
       <span class="state"><span id="statusDot" class="badgeDot off">off</span></span>
-      <button id="connectToggle" class="btn">연결</button>
+      <div class="dropdown" id="connectDropdown"><button id="connectToggle" class="btn">연결 ▾</button>
+  <div id="connectMenu" class="menu" role="menu" aria-hidden="true">
+    <button data-mode="usb" role="menuitem">USB</button>
+    <button data-mode="ble" role="menuitem">블루투스</button>
+  </div>
+</div>
       <button id="runToggle" class="btn" disabled>▶ 실행</button>
       <button id="fsBtn" class="btn" title="전체화면">전체화면</button>
     </div>
@@ -2359,6 +2365,189 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     }catch(e){ console.warn('inline dial 오류:', e); }
   };
 })();
+
+/* ==== [추가] USB(웹시리얼) 연결 지원: 다른 코드에 영향 최소화 ==== */
+(function(){
+  const enc = window._xroboEnc || new TextEncoder();  window._xroboEnc = enc;
+  const dec = window._xroboDec || new TextDecoder();  window._xroboDec = dec;
+
+  // 기존 전역(writeChar 등)을 그대로 활용하기 위해, 시리얼에서도 writeChar와 동일 인터페이스 제공
+  // (이미 전역에 let writeChar 가 있다면 덮어쓰지 않음. 시리얼 연결 시에만 writeChar를 래핑)
+  let _serial = { port:null, reader:null, writer:null, reading:false };
+  let _transport = { type:null }; // 'ble' | 'serial'
+
+  const $ = sel => document.querySelector(sel);
+  const connectBtn = $('#connectToggle');
+  const connectMenu = (function(){
+    let m = document.getElementById('connectMenu');
+    if(!m){ // 방어
+      m = document.createElement('div');
+      m.id = 'connectMenu'; m.className = 'menu';
+      m.innerHTML = '<button data-mode="usb">USB</button><button data-mode="ble">블루투스</button>';
+      const wrap = document.createElement('div'); wrap.className = 'dropdown'; wrap.id='connectDropdown';
+      connectBtn.parentNode.insertBefore(wrap, connectBtn);
+      wrap.appendChild(connectBtn); wrap.appendChild(m);
+    }
+    return m;
+  })();
+
+  function showConnectMenu(show){
+    if(!connectMenu) return;
+    connectMenu.classList.toggle('show', !!show);
+    connectMenu.setAttribute('aria-hidden', show ? 'false' : 'true');
+  }
+  document.addEventListener('click', (e)=>{
+    if(e.target.closest('#connectDropdown')) return;
+    showConnectMenu(false);
+  });
+
+  // 기존 연결 버튼의 기본 클릭 로직(블루투스 토글)을 건드리지 않기 위해,
+  // 캡처 단계에서 드롭다운을 우선 표시하고 기본 로직은 막는다.
+  // 사용자가 메뉴에서 '블루투스'를 선택하면, 그때만 원래 로직을 1회 우회 실행한다.
+  let _bypassOnce = false;
+  connectBtn.addEventListener('click', async (e)=>{
+    if(_bypassOnce){ _bypassOnce=false; return; }
+    // 연결되어 있다면 메뉴 대신 '해제' 동작 수행
+    const connected = (_transport && _transport.type) || (typeof isConnected!=='undefined' && isConnected);
+    if(connected){
+      e.preventDefault(); e.stopImmediatePropagation();
+      try{
+        if(_transport && _transport.type==='serial'){
+          await usbDisconnect();
+        }else{
+          if(typeof disconnectBLE === 'function'){ disconnectBLE(); }
+          else{
+            try{ if(window.bleDevice && bleDevice.gatt) bleDevice.gatt.disconnect(); }catch(_){}
+          }
+          try{ setConnUI(false); }catch(_){}
+        }
+      }catch(_){}
+      return;
+    }
+    // 연결 전이라면 드롭다운 메뉴 토글
+    e.preventDefault(); e.stopImmediatePropagation();
+    showConnectMenu(!connectMenu.classList.contains('show'));
+  }, true);
+
+  const statusDot = document.getElementById('statusDot');
+  const runToggle = document.getElementById('runToggle');
+  function setConnUI(on){
+    if(!statusDot || !runToggle) return;
+    statusDot.classList.toggle('on', !!on);
+    statusDot.classList.toggle('off', !on);
+    statusDot.textContent = on ? 'on' : 'off';
+    runToggle.disabled = !on;
+  
+    try{
+      var btn = document.getElementById('connectToggle');
+      if(btn){
+        if(on){
+          btn.textContent = '해제';
+          btn.classList.add('connected');
+          // 연결 중에는 드롭다운 메뉴를 숨김
+          var menu = document.getElementById('connectMenu');
+          if(menu){ menu.classList.remove('show'); menu.setAttribute('aria-hidden','true'); }
+        }else{
+          btn.textContent = '연결 ▾';
+          btn.classList.remove('connected');
+          var menu = document.getElementById('connectMenu');
+          if(menu){ menu.classList.remove('show'); menu.setAttribute('aria-hidden','true'); }
+        }
+      }
+    }catch(_){}
+}
+
+  async function usbConnect(){
+    if(!('serial' in navigator)){
+      alert('이 브라우저는 Web Serial을 지원하지 않습니다. Chrome/Edge(데스크탑) 또는 Android Chrome을 사용해 주세요.');
+      return;
+    }
+    try{
+      _serial.port = await navigator.serial.requestPort();
+      await _serial.port.open({ baudRate: 115200 });
+      _serial.writer = _serial.port.writable.getWriter();
+      _serial.reader = _serial.port.readable.getReader();
+      _serial.reading = true;
+
+      // 수신 루프: 기존 onBleChunk 파서를 그대로 사용
+      (async()=>{
+        try{
+          while(_serial.reading){
+            const { value, done } = await _serial.reader.read();
+            if(done) break;
+            if(value){
+              // value는 Uint8Array
+              const txt = dec.decode(value);
+              if(typeof onBleChunk === 'function') onBleChunk(txt);
+            }
+          }
+        }catch(err){ /* ignore */ }
+        finally{
+          try{ _serial.reader.releaseLock(); }catch(_){}
+          _serial.reader = null;
+          _serial.reading = false;
+        }
+      })();
+
+      // writeChar 래핑: 기존 코드가 writeChar.writeValue(...) 를 사용하므로 동일 인터페이스 제공
+      window.writeChar = {
+        async writeValue(buf){
+          if(!_serial.writer) throw new Error('USB writer not ready');
+          if(!(buf instanceof Uint8Array)) buf = enc.encode(String(buf));
+          await _serial.writer.write(buf);
+        }
+      };
+      try{ writeChar = window.writeChar; }catch(_){ /* scope에 없으면 무시 */ }
+      _transport.type = 'serial';
+      setConnUI(true);
+      if(typeof log === 'function') log('🔌 USB 시리얼 연결됨');
+    }catch(err){
+      alert('USB 연결 실패: ' + err);
+      try{ if(_serial.reader){ _serial.reader.cancel(); } }catch(_){}
+      try{ if(_serial.writer){ _serial.writer.releaseLock(); } }catch(_){}
+      try{ if(_serial.port){ await _serial.port.close(); } }catch(_){}
+      _serial = { port:null, reader:null, writer:null, reading:false };
+      setConnUI(false);
+    try{ if(_transport.type==='serial') writeChar=null; }catch(_){}
+      }
+  }
+
+  async function usbDisconnect(){
+    try{ if(_serial.reader){ _serial.reading=false; await _serial.reader.cancel(); } }catch(_){}
+    try{ if(_serial.writer){ _serial.writer.releaseLock(); } }catch(_){}
+    try{ if(_serial.port){ await _serial.port.close(); } }catch(_){}
+    _serial = { port:null, reader:null, writer:null, reading:false };
+    if(_transport.type === 'serial'){
+      _transport.type = null;
+      setConnUI(false);
+      if(typeof log === 'function') log('🔌 USB 시리얼 연결 해제');
+    }
+  }
+
+  // 메뉴 동작
+  connectMenu.addEventListener('click', async (e)=>{
+    const btn = e.target.closest('button[data-mode]');
+    if(!btn) return;
+    const mode = btn.dataset.mode;
+    showConnectMenu(false);
+
+    if(mode === 'usb'){
+      // USB 연결 요청
+      await usbDisconnect(); // 중복 방지
+      await usbConnect();
+    }else if(mode === 'ble'){
+      // 기존 블루투스 토글 로직을 1회 우회 실행
+      _bypassOnce = true;
+      // connectBtn에 버블링 클릭 이벤트 발생시켜 기존 핸들러 실행
+      connectBtn.dispatchEvent(new MouseEvent('click', {bubbles:true}));
+    }
+  });
+
+  // 탭/창 닫힐 때 USB 정리
+  window.addEventListener('beforeunload', ()=>{ try{ if(_serial.port) _serial.port.close(); }catch(_){} });
+})();
+
+
 </script>
 
 </body>
