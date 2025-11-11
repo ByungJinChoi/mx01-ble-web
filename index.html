@@ -2619,5 +2619,171 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
 })();
 </script>
 
+
+<!-- Android WebUSB fallback (non-breaking): adds WebUSB path when Web Serial is unavailable -->
+<script id="xrobo-webusb-fallback">
+(function(){
+  'use strict';
+  if(typeof window === 'undefined') return;
+
+  // Encoders reused by existing code
+  const enc = window._xroboEnc || new TextEncoder();  window._xroboEnc = enc;
+  const dec = window._xroboDec || new TextDecoder();  window._xroboDec = dec;
+
+  // Keep reference to original functions if present
+  const origUsbConnect = window.usbConnect;
+  const origUsbDisconnect = window.usbDisconnect;
+
+  // Shared state with existing UI helpers
+  const _transport = (window._transport) || (window._transport = { type:null });
+  const setConnUI = window.setConnUI || function(){};
+  const onBleChunk = window.onBleChunk || function(){};
+  let writeChar = window.writeChar; // may be reassigned below
+
+  // WebUSB state
+  const wusb = {
+    device: null,
+    iface:  null,
+    epIn:   null,
+    epOut:  null,
+    reading: false
+  };
+
+  function isAndroid(){ return /Android/i.test(navigator.userAgent||''); }
+
+  async function webUsbConnect(){
+    if(!('usb' in navigator)){
+      throw new Error('이 브라우저는 WebUSB를 지원하지 않습니다.');
+    }
+
+    // Common USB-to-serial vendor IDs (best-effort; may vary by board)
+    const filters = [
+      { vendorId: 0x303A }, // Espressif
+      { vendorId: 0x2341 }, // Arduino
+      { vendorId: 0x10C4 }, // Silicon Labs CP210x
+      { vendorId: 0x1A86 }, // WCH CH34x
+      { vendorId: 0x0403 }, // FTDI
+    ];
+
+    // Request device
+    const device = await navigator.usb.requestDevice({ filters });
+    await device.open();
+
+    // Select first configuration if not already selected
+    if(device.configuration == null){
+      await device.selectConfiguration(1);
+    }
+
+    // Find an interface that has both IN and OUT bulk endpoints
+    let foundIface = null, epIn = null, epOut = null;
+    for(const iface of device.configuration.interfaces){
+      for(const alt of iface.alternates){
+        const ein  = (alt.endpoints||[]).find(e => e.direction==='in'  && e.type==='bulk');
+        const eout = (alt.endpoints||[]).find(e => e.direction==='out' && e.type==='bulk');
+        if(ein && eout){
+          foundIface = iface.interfaceNumber;
+          epIn = ein.endpointNumber;
+          epOut = eout.endpointNumber;
+          break;
+        }
+      }
+      if(foundIface!=null) break;
+    }
+    if(foundIface==null){
+      await device.close();
+      throw new Error('적절한 USB 인터페이스( bulk IN/OUT )를 찾지 못했습니다.');
+    }
+
+    await device.claimInterface(foundIface);
+
+    // Save state
+    wusb.device = device;
+    wusb.iface  = foundIface;
+    wusb.epIn   = epIn;
+    wusb.epOut  = epOut;
+
+    // Start read loop
+    wusb.reading = true
+    async function readLoop(){
+      try{
+        while(wusb.reading){
+          const res = await device.transferIn(epIn, 64);
+          if(res && res.data && res.status === 'ok'){
+            const bytes = new Uint8Array(res.data.buffer);
+            const txt = dec.decode(bytes);
+            try{ onBleChunk(txt); }catch(_){}
+          }
+        }
+      }catch(e){
+        // stop on error
+      }finally{
+        wusb.reading = false;
+      }
+    }
+    readLoop();
+
+    // Provide same writeChar-like API used elsewhere
+    window.writeChar = {
+      async writeValue(buf){
+        if(!(buf instanceof Uint8Array)) buf = enc.encode(String(buf));
+        if(!wusb.device) throw new Error('USB 장치가 열려있지 않습니다.');
+        const res = await wusb.device.transferOut(epOut, buf);
+        if(res.status !== 'ok'){
+          throw new Error('USB 전송 실패: ' + res.status);
+        }
+      }
+    };
+    try{ writeChar = window.writeChar; }catch(_){}
+
+    _transport.type = 'serial'; // reuse the same path
+    try{ setConnUI(true); }catch(_){}
+    try{ if(typeof log === 'function') log('🔌 Android WebUSB 연결됨 (실험적)'); }catch(_){}
+  }
+
+  async function webUsbDisconnect(){
+    try{ wusb.reading = false; }catch(_){}
+    if(wusb.device){
+      try{ await wusb.device.releaseInterface(wusb.iface); }catch(_){}
+      try{ await wusb.device.close(); }catch(_){}
+    }
+    wusb.device=null; wusb.iface=null; wusb.epIn=null; wusb.epOut=null;
+    if(_transport.type === 'serial'){
+      _transport.type = null;
+      try{ setConnUI(false); }catch(_){}
+      try{ if(typeof log === 'function') log('🔌 Android WebUSB 연결 해제'); }catch(_){}
+    }
+  }
+
+  // Replace usbConnect/usbDisconnect safely with a wrapper (non-breaking)
+  if(typeof window.usbConnect === 'function'){
+    window.usbConnect = async function(){
+      // If Web Serial exists (desktop): use original
+      if('serial' in navigator && !isAndroid()){
+        return origUsbConnect();
+      }
+      // On Android or when Web Serial is missing: try WebUSB
+      if('usb' in navigator){
+        try{ await webUsbConnect(); return; }
+        catch(e){
+          alert('WebUSB 연결 실패: ' + e.message + '\\n지원되는 기기/펌웨어가 필요합니다.');
+        }
+      }
+      // Fallback: show guidance
+      alert('이 기기/브라우저에서는 USB 시리얼을 직접 사용할 수 없습니다. BLE 연결을 사용하거나 Android 앱을 이용해 주세요.');
+    };
+  }
+
+  if(typeof window.usbDisconnect === 'function'){
+    const old = origUsbDisconnect;
+    window.usbDisconnect = async function(){
+      // Try WebUSB disconnect first (no-op if not used)
+      try{ await webUsbDisconnect(); }catch(_){}
+      if(typeof old === 'function') return old();
+    };
+  }
+
+})();
+</script>
+
 </body>
 </html>
