@@ -364,6 +364,38 @@
   body.vs-resizing, body.vs-resizing *{ cursor: row-resize !important; user-select: none !important; }
 </style>
 
+
+<style id="xrobo-numpad-style">
+  /* ===== XROBO: 안드로이드용 숫자 패드 (+,-,0~9) ===== */
+  #xrobo-numpad{
+    position: fixed; left: 0; right: 0; bottom: 0;
+    background: #0b0f14; color:#fff;
+    padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
+    border-top:1px solid #1f2937;
+    box-shadow: 0 -10px 24px rgba(0,0,0,.35);
+    display: none; z-index: 100000;
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  }
+  #xrobo-numpad.show{ display:block; }
+  #xrobo-numpad .title{
+    font-size: 12px; color:#9ca3af; margin: 0 0 8px 2px;
+  }
+  #xrobo-numpad .signs, #xrobo-numpad .grid, #xrobo-numpad .ops{
+    display:grid; gap:10px;
+  }
+  #xrobo-numpad .signs{ grid-template-columns: repeat(2, 1fr); margin-bottom: 8px; }
+  #xrobo-numpad .grid{ grid-template-columns: repeat(3, 1fr); }
+  #xrobo-numpad .ops{ grid-template-columns: 2fr 1fr 1fr; margin-top: 8px; }
+  #xrobo-numpad button{
+    height: 48px; border:0; border-radius: 10px; font-weight: 800; font-size: 18px;
+    background:#e5e7eb; color:#111827; box-shadow:0 2px 10px rgba(0,0,0,.15);
+  }
+  #xrobo-numpad button:active{ transform: translateY(1px); }
+  #xrobo-numpad .sign{ background:#f59e0b; color:#fff; }
+  #xrobo-numpad .back{ background:#374151; color:#fff; font-size: 16px; }
+  #xrobo-numpad .ok{ background:#2563eb; color:#fff; }
+</style>
+
 </head>
 <body>
   <!-- 헤더 -->
@@ -2786,208 +2818,199 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
 </script>
 
 
-<!-- ==== [추가] EEPROM 업로드 모듈 (최소 주입) ==== -->
-<script id="xrobo-eeprom-upload">
+<script id="xrobo-numpad-script">
 (function(){
   'use strict';
+  // Android에서 블록/서보 입력 시 시스템 키보드 대신 페이지 내 숫자 패드(+,-,0~9)를 띄웁니다.
+  const isAndroid = /Android/i.test(navigator.userAgent||'');
 
-  // 기존 전역 유틸 재사용 (연결/로그/실행 생성기)
-  // - writeChar: BLE/USB 공용 쓰기 핸들
-  // - sendAndWaitRET(cmd): "RET 0/1"를 기다리는 helper
-  // - blocksToProgram(): 현재 워크스페이스를 IL 목록(list)으로 변환
-  // - log(): 실행 로그 패널 출력
-  if (typeof blocksToProgram!=='function') return;
-
-  // 상단바에 [업로드] 버튼 주입 (이미 있으면 바인딩만 보장)
-  function ensureUploadButton(){
-    let btn = document.getElementById('uploadBtn');
-    if (!btn){
-      const topbar = document.getElementById('topbar');
-      const fsBtn  = document.getElementById('fsBtn');
-      btn = document.createElement('button');
-      btn.id = 'uploadBtn';
-      btn.className = 'btn';
-      btn.textContent = '업로드';
-      btn.title = 'EEPROM에 코드 업로드';
-      if (topbar && fsBtn) topbar.insertBefore(btn, fsBtn);
-      else if (topbar) topbar.appendChild(btn);
-    }
-    if (!btn.dataset.bound){
-      btn.addEventListener('click', onUploadClick);
-      btn.dataset.bound = '1';
-    }
-  }
-
-  // 간단한 바이트코드 정의 (아두이노 펌웨어와 일치)
-  const OP = {
-    SVS:    0x01, // [servo][spdOrDelay][ang]
-    SV:     0x02, // [servo][ang]
-    M12:    0x03, // [v1][v2][msTicks]
-    M34:    0x04, // [v3][v4][msTicks]
-    WAIT:   0x05, // [msTicks]
-    LED:    0x06, // [ch][val]
-    MEL:    0x07, // [note][durTicks][waitTicks]
-    REP:    0x10, // [count]
-    ENDREP: 0x11, // []
-    END:    0x7F  // []
-  };
-  function writeU16(out, v){ out.push(v & 0xFF, (v>>8)&0xFF); }
-  function msToTicks(ms){ const t = Math.min(65535, Math.max(0, Math.round(ms/10))); return t; }
-  function servoNameToIndex(name){
-    const m = String(name||'').match(/^S(\d+)$/i);
-    const n = m ? parseInt(m[1],10) : 1;
-    return Math.max(1, Math.min(8, n));
-  }
-  // PITCH 문자열을 note index(0..20)로 단순 매핑
-  function pitchToIdx(p){
-    p = String(p||'C5').toUpperCase().trim();
-    const scale = "CDEFGAB";
-    const m = p.match(/^([A-G])(\d)$/); if(!m) return 7; // C5
-    const si = scale.indexOf(m[1]); const oct = parseInt(m[2],10);
-    const base = (oct===4?0 : (oct===5?7 : 14));
-    const idx = base + si;
-    return Math.max(0, Math.min(20, idx));
-  }
-
-  // 'CMD' 문자열 파서 (실시간 전송 문자열을 바이너리 IL로 변환)
-  function compileCmdString(s, out){
-    s = String(s||'').trim();
-    const tok = s.split(/\s+/);
-    if (tok[0]==='SVS' && tok.length>=4){
-      const srv = servoNameToIndex(tok[1]);
-      const spd = Math.max(0, Math.min(255, parseInt(tok[2],10) || 0));
-      const ang = Math.max(0, Math.min(180, parseInt(tok[3],10) || 0));
-      out.push(OP.SVS, srv, spd, ang);
-      return true;
-    }
-    if (tok[0]==='SV' && tok.length>=3){
-      const srv = servoNameToIndex(tok[1]);
-      const ang = Math.max(0, Math.min(180, parseInt(tok[2],10) || 0));
-      out.push(OP.SV, srv, ang);
-      return true;
-    }
-    if (tok[0]==='M12' && tok.length>=4){
-      const v1 = Math.max(-20, Math.min(20, parseInt(tok[1],10) || 0));
-      const v2 = Math.max(-20, Math.min(20, parseInt(tok[2],10) || 0));
-      const ms = Math.max(0, parseInt(tok[3],10) || 0);
-      out.push(OP.M12, (v1&0xFF), (v2&0xFF)); writeU16(out, msToTicks(ms));
-      return true;
-    }
-    if (tok[0]==='M34' && tok.length>=4){
-      const v3 = Math.max(-20, Math.min(20, parseInt(tok[1],10) || 0));
-      const v4 = Math.max(-20, Math.min(20, parseInt(tok[2],10) || 0));
-      const ms = Math.max(0, parseInt(tok[3],10) || 0);
-      out.push(OP.M34, (v3&0xFF), (v4&0xFF)); writeU16(out, msToTicks(ms));
-      return true;
-    }
-    if (tok[0]==='LED' && tok.length>=3){
-      const ch = Math.max(0, Math.min(8, parseInt(tok[1],10) || 0));
-      const val= Math.max(0, Math.min(20, parseInt(tok[2],10) || 0));
-      out.push(OP.LED, ch, val);
-      return true;
-    }
-    if (tok[0]==='MEL' && tok.length>=4){
-      const note = pitchToIdx(tok[1]);
-      const dur  = Math.max(0, parseInt(tok[2],10) || 0);
-      const wait = Math.max(0, parseInt(tok[3],10) || 0);
-      out.push(OP.MEL, note); writeU16(out, msToTicks(dur)); writeU16(out, msToTicks(wait));
-      return true;
-    }
-    return false;
-  }
-
-  // 프로그램(블록) -> 바이너리 IL
-  function compileToEEPROM(prog){
-    const out = [];
-    const warn = (msg)=>{ try{ log('⚠️ ' + msg); }catch(_){ console.warn(msg); } };
-
-    const compileList = (list, depth=0)=>{
-      for(const ins of list){
-        if (ins.type==='CMD'){
-          compileCmdString(ins.s, out);
-        }
-        else if (ins.type==='W'){
-          const ms = Math.max(0, parseInt(ins.args?.[0],10)||0);
-          out.push(OP.WAIT); writeU16(out, msToTicks(ms));
-        }
-        else if (ins.type==='FOR'){
-          const count = Math.max(0, Math.min(65535, parseInt(ins.count,10)||0));
-          out.push(OP.REP); writeU16(out, count);
-          compileList(ins.body, depth+1);
-          out.push(OP.ENDREP);
-        }
-        else if (ins.type==='LOOP_INF'){
-          out.push(OP.REP); writeU16(out, 65535);
-          compileList(ins.body, depth+1);
-          out.push(OP.ENDREP);
-        }
-        else if (ins.type==='IF' || ins.type==='WAIT_UNTIL' || ins.type==='REPEAT_UNTIL'){
-          warn('IF/WAIT_UNTIL/REPEAT_UNTIL 블록은 EEPROM 실행에서 미지원이므로 업로드에서 건너뜁니다.');
-        }
-        else if (ins.type==='SETVAR'){
-          warn('변수 블록은 EEPROM 실행에서 미지원이므로 업로드에서 건너뜁니다.');
-        }
-      }
-    };
-
-    compileList(prog);
-    out.push(OP.END);
-    return new Uint8Array(out);
-  }
-
-  // HEX 인코딩
-  function toHex(u8){
-    const abc='0123456789ABCDEF';
-    let s=''; for(let i=0;i<u8.length;i++){ const b=u8[i]; s += abc[b>>4] + abc[b&15]; }
-    return s;
-  }
-
-  async function onUploadClick(){
+  // 공통: 숫자 입력 힌트
+  function applyNumericHints(el){
     try{
-      if (!window.writeChar){ alert('먼저 장치와 연결하세요(USB/블루투스).'); return; }
+      el.setAttribute('inputmode','numeric');
+      el.setAttribute('pattern','[0-9+\-]*');
+      el.setAttribute('autocomplete','off');
+      el.setAttribute('autocorrect','off');
+      el.setAttribute('autocapitalize','off');
+      el.setAttribute('spellcheck','false');
+    }catch(_){}
+  }
 
-      const prog = blocksToProgram();
-      if(!prog || !prog.length){ alert('업로드할 블록이 없습니다. "XROBO start" 아래에 스택을 배치하세요.'); return; }
+  // 힌트는 모든 OS에 적용(키보드 배열 유도)
+  document.addEventListener('focusin', function(e){
+    const t = e.target;
+    if(!t) return;
+    if(t.classList && t.classList.contains('blocklyHtmlInput')) applyNumericHints(t);
+    if(t.matches && (t.matches('.numbox input[type=number]') || t.matches('.xrobo-dial-num input[type=number]'))) applyNumericHints(t);
+  }, true);
 
-      const bin = compileToEEPROM(prog);
-      if (bin.length > 900){
-        if(!confirm(`업로드 데이터(${bin.length}바이트)가 EEPROM(≈1000바이트)에 근접/초과할 수 있습니다. 계속할까요?`)){
-          return;
-        }
-      }
+  if(!isAndroid) return; // 안드로이드에서만 패드 표시
 
-      log(`⬆️ 업로드 시작: ${bin.length} bytes`);
-      const ok1 = await sendAndWaitRET(`EP_BEGIN ${bin.length}`);
-      if(!ok1){ alert('EP_BEGIN 실패'); return; }
+  // ===== 숫자 패드 UI =====
+  function buildPad(){
+    let pad = document.getElementById('xrobo-numpad');
+    if(pad) return pad;
+    pad = document.createElement('div');
+    pad.id = 'xrobo-numpad';
+    pad.setAttribute('role','dialog');
+    pad.setAttribute('aria-label','숫자 패드');
+    pad.innerHTML = [
+      '<div class="title">숫자 입력</div>',
+      '<div class="signs">',
+        '<button type="button" class="sign" data-ch="+">+ </button>',
+        '<button type="button" class="sign" data-ch="-">- </button>',
+      '</div>',
+      '<div class="grid grid1"></div>',
+      '<div class="ops">',
+        '<button type="button" class="zero" data-ch="0">0</button>',
+        '<button type="button" class="back">←</button>',
+        '<button type="button" class="ok">확인</button>',
+      '</div>'
+    ].join('');
+    document.body.appendChild(pad);
 
-      const CH = 32; // 32 bytes -> hex 64 chars
-      for(let off=0; off<bin.length; off+=CH){
-        const chunk = bin.slice(off, Math.min(off+CH, bin.length));
-        const hex = toHex(chunk);
-        const ok = await sendAndWaitRET(`EP_DATA ${hex}`);
-        if(!ok){ alert('EP_DATA 실패'); return; }
-      }
+    const g1 = pad.querySelector('.grid1');
+    ['7','8','9','4','5','6','1','2','3'].forEach(ch=>{
+      const b=document.createElement('button');
+      b.type='button'; b.textContent=ch;
+      b.addEventListener('click', ()=>insertChar(ch));
+      g1.appendChild(b);
+    });
+    pad.querySelector('.signs [data-ch="+"]').addEventListener('click', ()=>insertChar('+'));
+    pad.querySelector('.signs [data-ch="-"]').addEventListener('click', ()=>insertChar('-'));
+    pad.querySelector('.zero').addEventListener('click', ()=>insertChar('0'));
+    pad.querySelector('.back').addEventListener('click', backspace);
+    pad.querySelector('.ok').addEventListener('click', commitAndClose);
+    pad.addEventListener('mousedown', e=> e.stopPropagation());
+    pad.addEventListener('touchstart', e=> e.stopPropagation(), {passive:true});
+    return pad;
+  }
 
-      const ok2 = await sendAndWaitRET('EP_END');
-      if(!ok2){ alert('EP_END 실패'); return; }
-
-      log('✅ EEPROM 업로드 완료 (전원 인가 후 Start 버튼을 누르면 실행됩니다)');
-      alert('업로드 완료!\n전원을 켠 뒤 보드의 Start 버튼(D2)을 누르면 EEPROM 프로그램이 실행됩니다.');
-    }catch(e){
-      console.error(e);
-      alert('업로드 오류: ' + (e?.message||e));
+  let activeInput = null;
+  function openPadFor(input){
+    activeInput = input;
+    const pad = buildPad();
+    pad.classList.add('show');
+  }
+  function closePad(){
+    const pad = document.getElementById('xrobo-numpad');
+    if(pad) pad.classList.remove('show');
+    if(activeInput){
+      try{ activeInput.removeAttribute('readonly'); }catch(_){}
+      try{ activeInput.blur(); }catch(_){}
     }
+    activeInput = null;
+  }
+  function dispatch(el, type){ try{ el.dispatchEvent(new Event(type, {bubbles:true})); }catch(_){} }
+  function commitAndClose(){
+    if(!activeInput) return closePad();
+    // blockly 숫자 에디터이면 위젯 닫기
+    try{
+      if(activeInput.classList && activeInput.classList.contains('blocklyHtmlInput') && window.Blockly && Blockly.WidgetDiv && typeof Blockly.WidgetDiv.hide === 'function'){
+        setTimeout(()=>{ try{ Blockly.WidgetDiv.hide(); }catch(_){} closePad(); }, 0);
+        return;
+      }
+    }catch(_){}
+    // 일반 입력은 change 발생 + 닫기
+    dispatch(activeInput, 'input');
+    dispatch(activeInput, 'change');
+    closePad();
+  }
+  function insertChar(ch){
+    if(!activeInput) return;
+    ch = String(ch||'');
+    if(!/^[0-9+\-]$/.test(ch)) return;
+    let v = activeInput.value || '';
+
+    if(ch==='+' || ch==='-'){
+      // 부호는 맨 앞만 유지
+      v = v.replace(/^[+\-]?/, ch);
+      activeInput.value = v;
+      const len = activeInput.value.length;
+      try{ activeInput.setSelectionRange(len, len); }catch(_){}
+      return dispatch(activeInput, 'input');
+    }
+    // 숫자 삽입(캐럿 존중)
+    const start = activeInput.selectionStart ?? v.length;
+    const end   = activeInput.selectionEnd ?? v.length;
+    activeInput.value = v.slice(0, start) + ch + v.slice(end);
+    const pos = start + 1;
+    try{ activeInput.setSelectionRange(pos, pos); }catch(_){}
+    dispatch(activeInput, 'input');
+  }
+  function backspace(){
+    if(!activeInput) return;
+    const v = activeInput.value || '';
+    let start = activeInput.selectionStart ?? v.length;
+    let end   = activeInput.selectionEnd ?? v.length;
+    if(start === end && start > 0) start -= 1;
+    activeInput.value = v.slice(0, start) + v.slice(end);
+    try{ activeInput.setSelectionRange(start, start); }catch(_){}
+    dispatch(activeInput, 'input');
   }
 
-  // 초기화
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', ensureUploadButton);
-  } else {
-    ensureUploadButton();
+  // 대상 입력을 패드 전용으로 준비
+  function prepForPad(el){
+    if(!el || el.__xrobo_numpad_ready) return;
+    el.__xrobo_numpad_ready = true;
+    applyNumericHints(el);
+    el.setAttribute('inputmode','none');
+    el.setAttribute('readonly','readonly');
+    // 포커스/클릭/터치 시 패드 오픈
+    const open = (ev)=>{ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} openPadFor(el); };
+    el.addEventListener('focus', open);
+    el.addEventListener('click', open);
+    el.addEventListener('touchstart', open, {passive:false});
   }
+
+  // 1) Blockly 숫자 필드 전용 패치
+  function patchFieldNumber(){
+    try{
+      if(!window.Blockly || !Blockly.FieldNumber) return;
+      if(Blockly.FieldNumber.__xrobo_patched) return;
+      const origShow = Blockly.FieldNumber.prototype.showEditor_;
+      Blockly.FieldNumber.prototype.showEditor_ = function(){
+        const rv = origShow ? origShow.apply(this, arguments) : undefined;
+        const input = Blockly.FieldTextInput && Blockly.FieldTextInput.htmlInput_;
+        if(input){
+          prepForPad(input);
+          // 커서 끝으로 이동
+          try{ const n=input.value.length; input.setSelectionRange(n, n); }catch(_){}
+          // 즉시 열기
+          setTimeout(()=> openPadFor(input), 0);
+          // 블러 시 닫기
+          const onBlur = ()=>{ closePad(); input.removeEventListener('blur', onBlur); };
+          input.addEventListener('blur', onBlur, {once:true});
+        }
+        return rv;
+      };
+      Blockly.FieldNumber.__xrobo_patched = true;
+    }catch(_){}
+  }
+
+  // 2) 멀티 서보/인라인 다이얼의 숫자 입력에도 적용(이벤트 위임)
+  function delegateForUnitAndDial(){
+    const sel = '.numbox input[type=number], .xrobo-dial-num input[type=number]';
+    function handler(e){
+      const t = e.target && e.target.closest && e.target.closest(sel);
+      if(!t) return;
+      prepForPad(t);
+      try{ e.preventDefault(); e.stopPropagation(); }catch(_){}
+      openPadFor(t);
+    }
+    document.addEventListener('click', handler, true);
+    document.addEventListener('touchstart', handler, {capture:true, passive:false});
+  }
+
+  if(document.readyState === 'complete' || document.readyState === 'interactive'){
+    patchFieldNumber(); delegateForUnitAndDial();
+  }else{
+    window.addEventListener('DOMContentLoaded', ()=>{ patchFieldNumber(); delegateForUnitAndDial(); });
+  }
+  // 혹시 늦게 로드되는 경우를 위해 재시도
+  setTimeout(patchFieldNumber, 800);
 })();
 </script>
-<!-- ==== /EEPROM 업로드 모듈 ==== -->
 
 </body>
 </html>
