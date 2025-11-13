@@ -4,7 +4,8 @@
 <meta charset="utf-8" />
 <title>XROBO BLE</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<script src="https://unpkg.com/blockly/blockly.min.js">// 안전 바인딩: 기존 바인딩이 없을 때만 연결
+<script src="https://unpkg.com/blockly/blockly.min.js">
+// 안전 바인딩: 기존 바인딩이 없을 때만 연결 (src가 있으면 이 스니펫은 무시되지만, 하단에 동일 바인딩을 다시 넣었습니다)
 (function(){
   const sb = document.getElementById('saveBtn');
   if (sb && !sb.dataset.boundSave){
@@ -17,7 +18,6 @@
     lb.dataset.boundLoad = '1';
   }
 })();
-
 </script>
 <style>
   :root{
@@ -373,7 +373,6 @@
       <div class="spacer"></div>
 
       <!-- 저장/불러오기 버튼 -->
-            <!-- 파일 드롭다운 -->
       <div class="dropdown" id="fileDropdown">
         <button id="fileBtn" class="btn" title="파일">파일 ▾</button>
         <div id="fileMenu" class="menu" role="menu" aria-hidden="true">
@@ -382,15 +381,16 @@
           <button data-cmd="load" role="menuitem">불러오기</button>
         </div>
       </div>
-      
 
       <span class="state"><span id="statusDot" class="badgeDot off">off</span></span>
-      <div class="dropdown" id="connectDropdown"><button id="connectToggle" class="btn">연결 ▾</button>
-  <div id="connectMenu" class="menu" role="menu" aria-hidden="true">
-    <button data-mode="usb" role="menuitem">USB</button>
-    <button data-mode="ble" role="menuitem">블루투스</button>
-  </div>
-</div>
+      <div class="dropdown" id="connectDropdown">
+        <button id="connectToggle" class="btn">연결 ▾</button>
+        <div id="connectMenu" class="menu" role="menu" aria-hidden="true">
+          <button data-mode="usb" role="menuitem">USB</button>
+          <button data-mode="ble" role="menuitem">블루투스</button>
+        </div>
+      </div>
+
       <button id="runToggle" class="btn" disabled>▶ 실행</button>
       <button id="fsBtn" class="btn" title="전체화면">전체화면</button>
     </div>
@@ -406,7 +406,7 @@
     <div id="right">
       <div id="rightTop"></div>
       <div id="rightResizer" class="vsplit" title="크기 조절 바"></div>
-      
+
       <div id="rightBottom">
         <div style="font-size:calc(12px * var(--uiScale));color:#9ca3af;">실행 로그</div>
         <div id="log"></div>
@@ -438,7 +438,9 @@
         <value name="M3"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
         <value name="M4"><shadow type="math_number"><field name="NUM">20</field></shadow></value>
         <value name="MS"><shadow type="math_number"><field name="NUM">500</field></shadow></value>
-      </block>      <block type="servo_in"><field name="OUT">OUT1</field>
+      </block>
+
+      <block type="servo_in"><field name="OUT">OUT1</field>
         <value name="ANG"><shadow type="math_number"><field name="NUM">90</field></shadow></value></block>
       <block type="servo_slow"><field name="OUT">OUT1</field>
         <value name="DELAY"><shadow type="math_number"><field name="NUM">5</field></shadow></value>
@@ -520,11 +522,8 @@
 
 // === 변수 블록 한국어 라벨 적용 ===
 if (typeof Blockly !== 'undefined' && Blockly.Msg) {
-  // 'set %1 to %2' -> '%1 설정하기 %2'
   Blockly.Msg['VARIABLES_SET'] = '%1 설정하기 %2';
-  // 'change %1 by %2' -> '%1 %2 만큼 변경하기'
   Blockly.Msg['MATH_CHANGE_TITLE'] = '%1 %2 만큼 변경하기';
-  // 기본 변수명 라벨(선택)
   if (!Blockly.Msg['MATH_CHANGE_TITLE_ITEM']) Blockly.Msg['MATH_CHANGE_TITLE_ITEM'] = '변수';
 }
 
@@ -759,6 +758,7 @@ function exprFromBlock(b){
 /* ================= 입력 블록 → 아두이노 연동(RET 파서 등) ================= */
 let rxLineBuf = '';
 const retWaiters = []; // queue of resolvers
+
 function onBleLine(line){
   try{
     const m = String(line||'').match(/^\s*RET\s+([01])\s*$/);
@@ -769,32 +769,43 @@ function onBleLine(line){
     }
   }catch(_){}
 }
+
+/* [FIX-1] 줄바꿈 정규화: \r\n / \n / \r 모두 처리 */
 function onBleChunk(text){
-  rxLineBuf += String(text||'').replace(/\r/g,'');
+  rxLineBuf += String(text||'')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n');
   let idx;
   while((idx = rxLineBuf.indexOf('\n')) !== -1){
     const line = rxLineBuf.slice(0, idx);
     rxLineBuf = rxLineBuf.slice(idx + 1);
-    onBleLine(line);
+    if(line.trim().length) onBleLine(line);
   }
 }
-async function sendAndWaitRET(cmd, timeout=1500){
-  if(!writeChar) throw new Error('BLE 미연결');
-  let resolved = false;
-  const p = new Promise((resolve, reject)=>{
-    const wrapper = (v)=>{ resolved=true; resolve(v); };
-    retWaiters.push(wrapper);
-    setTimeout(()=>{
-      if(!resolved){
-        const i = retWaiters.indexOf(wrapper);
-        if(i>=0) retWaiters.splice(i,1);
-        reject(new Error('RET 시간초과'));
-      }
-    }, timeout);
-  });
-  await writeChar.writeValue(enc(cmd + '\n'));
-  log('➡️ ' + cmd);
-  return await p;
+
+/* [FIX-2] 안전 전송 래퍼: writeValue | writeValueWithoutResponse 자동 선택 */
+const enc = s=>new TextEncoder().encode(s);
+async function writeValueSafe(buf){
+  if(!writeChar) throw new Error('연결되지 않았습니다.');
+  // BLE Characteristic
+  if(typeof writeChar.writeValue === 'function'){
+    return await writeChar.writeValue(buf);
+  }
+  if(typeof writeChar.writeValueWithoutResponse === 'function'){
+    return await writeChar.writeValueWithoutResponse(buf);
+  }
+  // USB/WebUSB 래퍼 (writeValue만 구현됨)
+  if(typeof writeChar.write === 'function'){
+    return await writeChar.write(buf);
+  }
+  if(writeChar.writer && typeof writeChar.writer.write === 'function'){
+    return await writeChar.writer.write(buf);
+  }
+  throw new Error('쓰기 메서드를 찾지 못했습니다.');
+}
+async function writeLine(s){
+  await writeValueSafe(enc(String(s) + '\n'));
+  log('➡️ ' + s);
 }
 
 /* ================= AST 생성/평가기 ================= */
@@ -1047,8 +1058,6 @@ function walkChain(start, list){ for(let n=start; n; n=n.getNextBlock()) walkNod
 
 function normalizeProgram(list){
   const out=[];
-  
-
   for(const ins of list){
     if(ins.type==='CMD'){
       const prev=out[out.length-1];
@@ -1081,9 +1090,8 @@ function blocksToProgram(){
   return normalizeProgram(prog);
 }
 
-/* === C코드 미리보기 생성 (변수 선언 + SETVAR 지원 추가, 나머지 로직 유지) === */
+/* === C코드 미리보기 생성 === */
 function programToC(prog){
-  // 변수 선언부(int ...)를 최상단에 출력
   const decls=[];
   try{
     const names=getAllVarNames();
@@ -1118,7 +1126,6 @@ let refreshTimer=null;
 function refreshCodeDebounced(){ 
   clearTimeout(refreshTimer); 
   refreshTimer=setTimeout(()=>{ 
-    // 혹시 문자열에 "\\n"이 들어왔다면 실제 줄바꿈으로 교체
     const c = programToC(blocksToProgram());
     codeView.textContent = String(c).replace(/\\n/g, '\n');
   },100); 
@@ -1179,7 +1186,6 @@ const $=id=>document.getElementById(id);
 const log=m=>{ const L=$('log'); L.textContent+=m+"\n"; L.scrollTop=L.scrollHeight; };
 const btnConnect=$('connectToggle'), btnRun=$('runToggle'), dot=$('statusDot');
 const btnRt=$('rtToggle');
-const enc=s=>new TextEncoder().encode(s);
 
 function resetBleRefs(){ bleDevice=null; bleServer=null; bleService=null; writeChar=null; notifyChar=null; }
 function setConnected(v){
@@ -1209,7 +1215,7 @@ btnRt.addEventListener('click', ()=>{
 async function sendImmediate(s){
   if(!realTime) return;
   if(!writeChar) return;
-  try{ await writeChar.writeValue(enc(s+'\n')); log('➡️ '+s); }
+  try{ await writeLine(s); }
   catch(e){ console.error(e); log('⚠️ 전송 실패: '+e); }
 }
 
@@ -1225,7 +1231,7 @@ async function connectBLE(){
   try{
     const dev = await navigator.bluetooth.requestDevice({
       filters:[{ namePrefix:'XROBO' }],
-      optionalServices:[SERVICE_UUID, 0xFFF3, 0xFFF4]
+      optionalServices:[SERVICE_UUID, 0xFFF3, 0xFFF4] // 서비스 힌트
     });
     if(connectToken!==myToken) return;
     try{ bleDevice?.removeEventListener('gattserverdisconnected', onDisconnected); }catch(_){}
@@ -1250,7 +1256,11 @@ async function connectBLE(){
     if(!writeChar) throw new Error('write 특성을 찾지 못했습니다.');
     if(notifyChar){
       await notifyChar.startNotifications();
-      notifyChar.addEventListener('characteristicvaluechanged',ev=>{ const v=new TextDecoder().decode(ev.target.value); log('⬅️ '+v); onBleChunk(v); });
+      notifyChar.addEventListener('characteristicvaluechanged',ev=>{
+        const v=new TextDecoder().decode(ev.target.value);
+        log('⬅️ '+v.trim());
+        onBleChunk(v);
+      });
     }
     if(connectToken!==myToken) return;
     setConnected(true);
@@ -1266,12 +1276,30 @@ function disconnectBLE(){
 }
 btnConnect.onclick = ()=>{ isConnected ? disconnectBLE() : connectBLE(); };
 
+/* [FIX-3] 대기시간 완화: 기본 1.5s → 5s */
+async function sendAndWaitRET(cmd, timeout=5000){
+  if(!writeChar) throw new Error('BLE 미연결');
+  let resolved = false;
+  const p = new Promise((resolve, reject)=>{
+    const wrapper = (v)=>{ resolved=true; resolve(v); };
+    retWaiters.push(wrapper);
+    setTimeout(()=>{
+      if(!resolved){
+        const i = retWaiters.indexOf(wrapper);
+        if(i>=0) retWaiters.splice(i,1);
+        reject(new Error('RET 시간초과'));
+      }
+    }, timeout);
+  });
+  await writeLine(cmd);
+  return await p;
+}
+
 /* 실행 루프 */
 async function sendCmdIfActive(s, myRun){
   if(myRun.canceled()) return;
   if(!writeChar) throw new Error('BLE 미연결');
-  await writeChar.writeValue(enc(s+'\n'));
-  log('➡️ '+s);
+  await writeLine(s);
 }
 async function sleepCancelable(ms, myRun){
   let remain = Math.max(0, ms);
@@ -1284,7 +1312,7 @@ async function sleepCancelable(ms, myRun){
 }
 btnRun.onclick = async ()=>{
   if(!isRunning){
-    if(!writeChar){ alert('먼저 BLE 연결!'); return; }
+    if(!writeChar){ alert('먼저 장치를 연결하세요!'); return; } /* 안내 문구 보편화 */
     setRunning(true);
     const prog = blocksToProgram();
     if(!prog.length){ alert('실행할 블록이 없습니다.\n"XROBO start" 또는 최상단 스택을 배치하세요.'); setRunning(false); return; }
@@ -1292,7 +1320,6 @@ btnRun.onclick = async ()=>{
     const myRun = { canceled: ()=> myRunId !== runToken || !isRunning };
     // 변수 런타임 초기화(기본 0)
     rtVars = {};
-    
 
     const runLoop = async(list)=>{
       for(let i=0;i<list.length;i++){
@@ -1368,7 +1395,7 @@ btnRun.onclick = async ()=>{
   }else{
     setRunning(false);
     runToken++;
-    try{ if(writeChar) await writeChar.writeValue(enc('S\n')); }catch(_){}
+    try{ if(writeChar) await writeLine('S'); }catch(_){}
   }
 };
 
@@ -1449,8 +1476,7 @@ async function rtTick(){
       rtPrev.set(u.name, {...u});
       if(u.power){
         try{
-          await writeChar.writeValue(enc(`SVS ${u.name} ${u.speed} ${u.angle}\n`));
-          log('➡️ ' + `SVS ${u.name} ${u.speed} ${u.angle}`);
+          await writeLine(`SVS ${u.name} ${u.speed} ${u.angle}`);
         }catch(_){ /* 전송 실패 무시 */ }
       }
     }
@@ -1822,12 +1848,10 @@ function fallbackDownload(filename, text, type='application/json'){
 }
 
 async function saveProject(){
-  // Build payload once
   const data = buildProjectPayload();
   const json = JSON.stringify(data, null, 2);
   const defaultName = `xrobo_project_${ts()}.xrobo.json`;
 
-  // Helper: safe download fallback
   const doFallback = (name = defaultName)=>{
     try{
       fallbackDownload(name, json);
@@ -1838,7 +1862,6 @@ async function saveProject(){
     }
   };
 
-  // Try File System Access API first (if available & allowed)
   try{
     if (window.showSaveFilePicker){
       try{
@@ -1852,7 +1875,6 @@ async function saveProject(){
         log('💾 저장 완료');
         return;
       }catch(err){
-        // User canceled or API blocked -> graceful fallback
         console.warn('showSaveFilePicker 실패, 다운로드로 폴백:', err);
         doFallback();
         return;
@@ -1860,10 +1882,7 @@ async function saveProject(){
     }
   }catch(e){
     console.warn('File System Access API 사용 불가, 다운로드로 폴백:', e);
-    // fall through to fallback
   }
-
-  // Final fallback for 모든 브라우저(모바일/iOS 포함)
   doFallback();
 }
 
@@ -2003,18 +2022,16 @@ function openSingleServoDialByOut(outName, initAngle){
   try{
     const servoName = __xrobo_out_to_servo_name(outName);
     const backup = { html: stageEl.innerHTML, bg: stageEl.style.backgroundImage, block: (typeof currentBlock!=='undefined'? currentBlock : null) };
-    currentBlock = null;                 // 저장/닫기 로직이 프로젝트 데이터에 손대지 않도록
-    stageEl.innerHTML = '';              // 기존 유닛 임시 비움
-    stageEl.style.backgroundImage = '';  // 배경 제거(보다 집중)
+    currentBlock = null;
+    stageEl.innerHTML = '';
+    stageEl.style.backgroundImage = '';
     const st = {name:servoName, angle: (Number(initAngle)||90), speed:10, power:true, x:12, y:56};
     createUnit(st);
 
-    // 모달 표시 + 실시간 틱
     servoModal.classList.add('show');
     servoModal.setAttribute('aria-hidden','false');
     if(realTime) rtStartTicker();
 
-    // 닫기(저장 없이 복구)
     function closeDialOnly(ev){
       if(ev && ev.stopImmediatePropagation) ev.stopImmediatePropagation();
       servoModal.classList.remove('show');
@@ -2027,7 +2044,6 @@ function openSingleServoDialByOut(outName, initAngle){
       servoModal.removeEventListener('click', overlayCloser, true);
     }
     function overlayCloser(e){ if(e.target===servoModal) closeDialOnly(e); }
-    // 캡쳐 단계에서 한 번만 가로채 기존 close 핸들러보다 먼저 실행
     closeModalBtn.addEventListener('click', closeDialOnly, {once:true, capture:true});
     servoModal.addEventListener('click', overlayCloser, {once:true, capture:true});
   }catch(e){ console.warn('openSingleServoDial 오류:', e); }
@@ -2045,13 +2061,11 @@ function openSingleServoDialByOut(outName, initAngle){
         const img = new Blockly.FieldImage(__xrobo_svg_text_btn('다이얼'), 56, 24, '다이얼');
         const that = this;
         img.setOnClickHandler(function(){
-          // 각도 초기값(있다면)도 전달
           let initAng = 90;
           if(angleFieldName){
             const v = that.getFieldValue(angleFieldName);
             initAng = Number(v)||initAng;
           }else{
-            // 입력값 형태일 경우 shadow/number에서 가져오기 시도
             const vIn = that.getInputTargetBlock && that.getInputTargetBlock('ANG');
             if(vIn && vIn.type==='math_number'){
               const f = vIn.getFieldValue && vIn.getFieldValue('NUM');
@@ -2066,11 +2080,10 @@ function openSingleServoDialByOut(outName, initAngle){
       blk.__dial_patched = true;
     };
   }
-  attachDialBtnTo('servo_dd', 'ANG');  // 드롭다운 각도
-  attachDialBtnTo('servo_in',  null ); // 수식/값 입력 각도
+  attachDialBtnTo('servo_dd', 'ANG');
+  attachDialBtnTo('servo_in',  null );
   attachDialBtnTo('servo_slow', null);
 })();
-
 
 /* ================= 끝 ================= */
 // 안전 바인딩: 기존 바인딩이 없을 때만 연결
@@ -2092,7 +2105,6 @@ function openSingleServoDialByOut(outName, initAngle){
 (function(){
   if (window.__xrobo_inline_dial_defined) return;
   window.__xrobo_inline_dial_defined = true;
-  // 슬로우 서보용: 다이얼 닫을 때 지연(DELAY) 입력에 반영
   function applyDelayToBlock(block, delay){
     try{
       if(!block || !block.workspace) return;
@@ -2101,13 +2113,10 @@ function openSingleServoDialByOut(outName, initAngle){
       const input = block.getInput('DELAY');
       if(!input) return;
       const child = block.getInputTargetBlock && block.getInputTargetBlock('DELAY');
-
-      // 연결된 게 숫자 블록이면 값만 갱신
       if (child && child.type === 'math_number') {
         if (typeof child.setFieldValue === 'function') child.setFieldValue(String(d), 'NUM');
         return;
       }
-      // 연결된 것이 없거나 shadow라면 숫자 블록을 만들어 연결
       const isShadow = child && typeof child.isShadow === 'function' && child.isShadow();
       if (!child || isShadow){
         const ws = block.workspace;
@@ -2117,33 +2126,25 @@ function openSingleServoDialByOut(outName, initAngle){
         if (input.connection && num.outputConnection) input.connection.connect(num.outputConnection);
         return;
       }
-      // 사용자가 직접 수식/변수 블록을 연결한 경우엔 덮어쓰지 않음
     }catch(e){ console.warn('applyDelayToBlock 오류:', e); }
   }
 
-  // 다이얼 닫을 때 블록의 각도 입력(ANG)에 반영
   function applyAngleToBlock(block, angle){
     try{
       if(!block || !block.workspace) return;
       const ang = Math.max(0, Math.min(180, Math.round(Number(angle)||0)));
-
-      // 1) 필드형(servo_dd 호환용) - 남아있다면
       if (typeof block.getField === 'function' && block.getField('ANG')) {
         block.setFieldValue(String(ang), 'ANG');
         return;
       }
-      // 2) 값 입력형(servo_in, servo_slow)
       if (typeof block.getInput !== 'function') return;
       const input = block.getInput('ANG');
       if(!input) return;
       const child = block.getInputTargetBlock && block.getInputTargetBlock('ANG');
-
-      // 연결된 게 숫자 블록이면 값만 갱신
       if (child && child.type === 'math_number') {
         if (typeof child.setFieldValue === 'function') child.setFieldValue(String(ang), 'NUM');
         return;
       }
-      // 연결된 것이 없거나 shadow라면 숫자 블록을 만들어 연결
       const isShadow = child && typeof child.isShadow === 'function' && child.isShadow();
       if (!child || isShadow){
         const ws = block.workspace;
@@ -2153,10 +2154,8 @@ function openSingleServoDialByOut(outName, initAngle){
         if (input.connection && num.outputConnection) input.connection.connect(num.outputConnection);
         return;
       }
-      // 사용자가 직접 수식/변수 블록을 연결한 경우엔 덮어쓰지 않음
     }catch(e){ console.warn('applyAngleToBlock 오류:', e); }
   }
-
 
   function outToServoName(out){
     const m = String(out||'').match(/OUT(\d+)/i);
@@ -2192,7 +2191,6 @@ function openSingleServoDialByOut(outName, initAngle){
       pop.style.left = left + "px";
       pop.style.top  = top + "px";
     }catch(e){
-      // fallback center
       pop.style.left = "calc(50% - 90px)";
       pop.style.top  = "120px";
     }
@@ -2226,14 +2224,12 @@ function openSingleServoDialByOut(outName, initAngle){
       '</div>'
     ].join('');
 
-    // speed select 0~20
     const spdSel = pop.querySelector('select');
     for(let i=0;i<=20;i++){
       const o=document.createElement('option'); o.value=String(i); o.textContent=String(i);
       spdSel.appendChild(o);
     }
     spdSel.value = "10";
-// 초기 지연시간(DELAY) 블록값을 읽어 반영 (servo_slow일 때)
 (function(){
   try{
     if (block && block.type === 'servo_slow'){
@@ -2251,8 +2247,6 @@ function openSingleServoDialByOut(outName, initAngle){
   }catch(_){}
 })();
 
-
-    // refs
     const inp = pop.querySelector('input');
     const svg = pop.querySelector('svg');
     const dot = pop.querySelector('.xrobo-dial-dot');
@@ -2273,7 +2267,6 @@ liveBtn.addEventListener('click', function(){
   try{
     if (typeof setRealtime === 'function') {
       setRealtime(live);
-      // 멀티서보 모달이 열려 있을 때는 주기 전송 타이커도 동일하게 동기화
       if (typeof servoModal !== 'undefined' && servoModal && servoModal.classList && servoModal.classList.contains('show')) {
         try {
           if (live) { if (typeof rtStartTicker === 'function') rtStartTicker(); }
@@ -2284,13 +2277,11 @@ liveBtn.addEventListener('click', function(){
   }catch(_){}
 });
 
-
     const state = { angle: clamp(parseInt(inp.value||'90',10)||90,0,180), speed: 10, dragging:false, lastScrDeg:90 };
 
-    function valToScreenDeg(v){ return clamp(v,0,180); } // 0~180 그대로
+    function valToScreenDeg(v){ return clamp(v,0,180); }
     function render(){
       inp.value = String(Math.round(state.angle));
-      // dot
       const R=30, a=toRad(valToScreenDeg(state.angle));
       const x=50 + R*Math.cos(a), y=50 - R*Math.sin(a);
       dot.setAttribute('cx', String(x)); dot.setAttribute('cy', String(y));
@@ -2306,7 +2297,6 @@ liveBtn.addEventListener('click', function(){
     }
     const commitThrottled = throttle(commit, 100);
 
-    // events
     inp.addEventListener('change', ()=>{
       const v = parseInt(inp.value||'0',10);
       if(Number.isFinite(v)){
@@ -2332,11 +2322,10 @@ liveBtn.addEventListener('click', function(){
       const cx=r.left+r.width/2, cy=r.top+r.height/2;
       const dx=clientX-cx, dy=cy-clientY;
       const rad=Math.atan2(dy, dx);
-      const deg=toDeg(rad); // -180..180
+      const deg=toDeg(rad);
       const a = (deg>=0?deg:deg+360); const val = clamp(Math.round(a),0,180);
       return val;
     }
-    // We'll replace the above python formatting piece for JS correctness later.
 
     function dialDown(ev){
       setDotActive(true);
@@ -2372,7 +2361,6 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     return pop;
   }
 
-  // 외부에서 호출
   window.__xrobo_open_inline_servo_dial = function(block, outName, initAngle){
     try{
       const pop = buildDialPopover(block, outToServoName(outName), initAngle||90);
@@ -2381,21 +2369,19 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
   };
 })();
 
-/* ==== [추가] USB(웹시리얼) 연결 지원: 다른 코드에 영향 최소화 ==== */
+/* ==== USB(웹시리얼) 연결 지원 ==== */
 (function(){
   const enc = window._xroboEnc || new TextEncoder();  window._xroboEnc = enc;
   const dec = window._xroboDec || new TextDecoder();  window._xroboDec = dec;
 
-  // 기존 전역(writeChar 등)을 그대로 활용하기 위해, 시리얼에서도 writeChar와 동일 인터페이스 제공
-  // (이미 전역에 let writeChar 가 있다면 덮어쓰지 않음. 시리얼 연결 시에만 writeChar를 래핑)
   let _serial = { port:null, reader:null, writer:null, reading:false };
-  let _transport = { type:null }; // 'ble' | 'serial'
+  let _transport = { type:null };
 
   const $ = sel => document.querySelector(sel);
   const connectBtn = $('#connectToggle');
   const connectMenu = (function(){
     let m = document.getElementById('connectMenu');
-    if(!m){ // 방어
+    if(!m){
       m = document.createElement('div');
       m.id = 'connectMenu'; m.className = 'menu';
       m.innerHTML = '<button data-mode="usb">USB</button><button data-mode="ble">블루투스</button>';
@@ -2416,13 +2402,9 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     showConnectMenu(false);
   });
 
-  // 기존 연결 버튼의 기본 클릭 로직(블루투스 토글)을 건드리지 않기 위해,
-  // 캡처 단계에서 드롭다운을 우선 표시하고 기본 로직은 막는다.
-  // 사용자가 메뉴에서 '블루투스'를 선택하면, 그때만 원래 로직을 1회 우회 실행한다.
   let _bypassOnce = false;
   connectBtn.addEventListener('click', async (e)=>{
     if(_bypassOnce){ _bypassOnce=false; return; }
-    // 연결되어 있다면 메뉴 대신 '해제' 동작 수행
     const connected = (_transport && _transport.type) || (typeof isConnected!=='undefined' && isConnected);
     if(connected){
       e.preventDefault(); e.stopImmediatePropagation();
@@ -2439,7 +2421,6 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
       }catch(_){}
       return;
     }
-    // 연결 전이라면 드롭다운 메뉴 토글
     e.preventDefault(); e.stopImmediatePropagation();
     showConnectMenu(!connectMenu.classList.contains('show'));
   }, true);
@@ -2452,14 +2433,12 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     statusDot.classList.toggle('off', !on);
     statusDot.textContent = on ? 'on' : 'off';
     runToggle.disabled = !on;
-  
     try{
       var btn = document.getElementById('connectToggle');
       if(btn){
         if(on){
           btn.textContent = '해제';
           btn.classList.add('connected');
-          // 연결 중에는 드롭다운 메뉴를 숨김
           var menu = document.getElementById('connectMenu');
           if(menu){ menu.classList.remove('show'); menu.setAttribute('aria-hidden','true'); }
         }else{
@@ -2470,7 +2449,7 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
         }
       }
     }catch(_){}
-}
+  }
 
   async function usbConnect(){
     if(!('serial' in navigator)){
@@ -2484,14 +2463,12 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
       _serial.reader = _serial.port.readable.getReader();
       _serial.reading = true;
 
-      // 수신 루프: 기존 onBleChunk 파서를 그대로 사용
       (async()=>{
         try{
           while(_serial.reading){
             const { value, done } = await _serial.reader.read();
             if(done) break;
             if(value){
-              // value는 Uint8Array
               const txt = dec.decode(value);
               if(typeof onBleChunk === 'function') onBleChunk(txt);
             }
@@ -2504,7 +2481,6 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
         }
       })();
 
-      // writeChar 래핑: 기존 코드가 writeChar.writeValue(...) 를 사용하므로 동일 인터페이스 제공
       window.writeChar = {
         async writeValue(buf){
           if(!_serial.writer) throw new Error('USB writer not ready');
@@ -2523,8 +2499,8 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
       try{ if(_serial.port){ await _serial.port.close(); } }catch(_){}
       _serial = { port:null, reader:null, writer:null, reading:false };
       setConnUI(false);
-    try{ if(_transport.type==='serial') writeChar=null; }catch(_){}
-      }
+      try{ if(_transport.type==='serial') writeChar=null; }catch(_){}
+    }
   }
 
   async function usbDisconnect(){
@@ -2539,7 +2515,6 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     }
   }
 
-  // 메뉴 동작
   connectMenu.addEventListener('click', async (e)=>{
     const btn = e.target.closest('button[data-mode]');
     if(!btn) return;
@@ -2547,22 +2522,16 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     showConnectMenu(false);
 
     if(mode === 'usb'){
-      // USB 연결 요청
-      await usbDisconnect(); // 중복 방지
+      await usbDisconnect();
       await usbConnect();
     }else if(mode === 'ble'){
-      // 기존 블루투스 토글 로직을 1회 우회 실행
       _bypassOnce = true;
-      // connectBtn에 버블링 클릭 이벤트 발생시켜 기존 핸들러 실행
       connectBtn.dispatchEvent(new MouseEvent('click', {bubbles:true}));
     }
   });
 
-  // 탭/창 닫힐 때 USB 정리
   window.addEventListener('beforeunload', ()=>{ try{ if(_serial.port) _serial.port.close(); }catch(_){} });
 })();
-
-
 </script>
 
 
@@ -2589,7 +2558,6 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     startY = y;
     startH = getVarLogH();
     const rect = right.getBoundingClientRect();
-    // 최소/최대: 로그창은 최소 80px, 최대는 패널 전체 높이 - 최소 코드창 120px - 분할바 높이
     maxH = Math.max(100, rect.height - 120 - 8);
     document.body.classList.add('vs-resizing');
   }
@@ -2607,12 +2575,10 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     document.body.classList.remove('vs-resizing');
   }
 
-  // Mouse
   resizer.addEventListener('mousedown', (e)=>{ e.preventDefault(); onDown(e.clientY); });
   window.addEventListener('mousemove', (e)=> onMove(e.clientY));
   window.addEventListener('mouseup', onUp);
 
-  // Touch
   resizer.addEventListener('touchstart', (e)=>{ if(!e.touches||!e.touches[0]) return; onDown(e.touches[0].clientY); }, {passive:false});
   window.addEventListener('touchmove', (e)=>{ if(!e.touches||!e.touches[0]) return; onMove(e.touches[0].clientY); }, {passive:false});
   window.addEventListener('touchend', onUp);
@@ -2620,27 +2586,23 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
 </script>
 
 
-<!-- Android WebUSB fallback (non-breaking): adds WebUSB path when Web Serial is unavailable -->
+<!-- Android WebUSB fallback (실험적) -->
 <script id="xrobo-webusb-fallback">
 (function(){
   'use strict';
   if(typeof window === 'undefined') return;
 
-  // Encoders reused by existing code
   const enc = window._xroboEnc || new TextEncoder();  window._xroboEnc = enc;
   const dec = window._xroboDec || new TextDecoder();  window._xroboDec = dec;
 
-  // Keep reference to original functions if present
   const origUsbConnect = window.usbConnect;
   const origUsbDisconnect = window.usbDisconnect;
 
-  // Shared state with existing UI helpers
   const _transport = (window._transport) || (window._transport = { type:null });
   const setConnUI = window.setConnUI || function(){};
   const onBleChunk = window.onBleChunk || function(){};
-  let writeChar = window.writeChar; // may be reassigned below
+  let writeChar = window.writeChar;
 
-  // WebUSB state
   const wusb = {
     device: null,
     iface:  null,
@@ -2656,25 +2618,21 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
       throw new Error('이 브라우저는 WebUSB를 지원하지 않습니다.');
     }
 
-    // Common USB-to-serial vendor IDs (best-effort; may vary by board)
     const filters = [
       { vendorId: 0x303A }, // Espressif
       { vendorId: 0x2341 }, // Arduino
-      { vendorId: 0x10C4 }, // Silicon Labs CP210x
-      { vendorId: 0x1A86 }, // WCH CH34x
+      { vendorId: 0x10C4 }, // CP210x
+      { vendorId: 0x1A86 }, // CH34x
       { vendorId: 0x0403 }, // FTDI
     ];
 
-    // Request device
     const device = await navigator.usb.requestDevice({ filters });
     await device.open();
 
-    // Select first configuration if not already selected
     if(device.configuration == null){
       await device.selectConfiguration(1);
     }
 
-    // Find an interface that has both IN and OUT bulk endpoints
     let foundIface = null, epIn = null, epOut = null;
     for(const iface of device.configuration.interfaces){
       for(const alt of iface.alternates){
@@ -2696,13 +2654,11 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
 
     await device.claimInterface(foundIface);
 
-    // Save state
     wusb.device = device;
     wusb.iface  = foundIface;
     wusb.epIn   = epIn;
     wusb.epOut  = epOut;
 
-    // Start read loop
     wusb.reading = true
     async function readLoop(){
       try{
@@ -2715,14 +2671,12 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
           }
         }
       }catch(e){
-        // stop on error
       }finally{
         wusb.reading = false;
       }
     }
     readLoop();
 
-    // Provide same writeChar-like API used elsewhere
     window.writeChar = {
       async writeValue(buf){
         if(!(buf instanceof Uint8Array)) buf = enc.encode(String(buf));
@@ -2735,7 +2689,7 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     };
     try{ writeChar = window.writeChar; }catch(_){}
 
-    _transport.type = 'serial'; // reuse the same path
+    _transport.type = 'serial';
     try{ setConnUI(true); }catch(_){}
     try{ if(typeof log === 'function') log('🔌 Android WebUSB 연결됨 (실험적)'); }catch(_){}
   }
@@ -2754,21 +2708,17 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     }
   }
 
-  // Replace usbConnect/usbDisconnect safely with a wrapper (non-breaking)
   if(typeof window.usbConnect === 'function'){
     window.usbConnect = async function(){
-      // If Web Serial exists (desktop): use original
       if('serial' in navigator && !isAndroid()){
         return origUsbConnect();
       }
-      // On Android or when Web Serial is missing: try WebUSB
       if('usb' in navigator){
         try{ await webUsbConnect(); return; }
         catch(e){
-          alert('WebUSB 연결 실패: ' + e.message + '\\n지원되는 기기/펌웨어가 필요합니다.');
+          alert('WebUSB 연결 실패: ' + e.message + '\n지원되는 기기/펌웨어가 필요합니다.');
         }
       }
-      // Fallback: show guidance
       alert('이 기기/브라우저에서는 USB 시리얼을 직접 사용할 수 없습니다. BLE 연결을 사용하거나 Android 앱을 이용해 주세요.');
     };
   }
@@ -2776,7 +2726,6 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
   if(typeof window.usbDisconnect === 'function'){
     const old = origUsbDisconnect;
     window.usbDisconnect = async function(){
-      // Try WebUSB disconnect first (no-op if not used)
       try{ await webUsbDisconnect(); }catch(_){}
       if(typeof old === 'function') return old();
     };
@@ -2784,210 +2733,6 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
 
 })();
 </script>
-
-
-<!-- ==== [추가] EEPROM 업로드 모듈 (최소 주입) ==== -->
-<script id="xrobo-eeprom-upload">
-(function(){
-  'use strict';
-
-  // 기존 전역 유틸 재사용 (연결/로그/실행 생성기)
-  // - writeChar: BLE/USB 공용 쓰기 핸들
-  // - sendAndWaitRET(cmd): "RET 0/1"를 기다리는 helper
-  // - blocksToProgram(): 현재 워크스페이스를 IL 목록(list)으로 변환
-  // - log(): 실행 로그 패널 출력
-  if (typeof blocksToProgram!=='function') return;
-
-  // 상단바에 [업로드] 버튼 주입 (이미 있으면 바인딩만 보장)
-  function ensureUploadButton(){
-    let btn = document.getElementById('uploadBtn');
-    if (!btn){
-      const topbar = document.getElementById('topbar');
-      const fsBtn  = document.getElementById('fsBtn');
-      btn = document.createElement('button');
-      btn.id = 'uploadBtn';
-      btn.className = 'btn';
-      btn.textContent = '업로드';
-      btn.title = 'EEPROM에 코드 업로드';
-      if (topbar && fsBtn) topbar.insertBefore(btn, fsBtn);
-      else if (topbar) topbar.appendChild(btn);
-    }
-    if (!btn.dataset.bound){
-      btn.addEventListener('click', onUploadClick);
-      btn.dataset.bound = '1';
-    }
-  }
-
-  // 간단한 바이트코드 정의 (아두이노 펌웨어와 일치)
-  const OP = {
-    SVS:    0x01, // [servo][spdOrDelay][ang]
-    SV:     0x02, // [servo][ang]
-    M12:    0x03, // [v1][v2][msTicks]
-    M34:    0x04, // [v3][v4][msTicks]
-    WAIT:   0x05, // [msTicks]
-    LED:    0x06, // [ch][val]
-    MEL:    0x07, // [note][durTicks][waitTicks]
-    REP:    0x10, // [count]
-    ENDREP: 0x11, // []
-    END:    0x7F  // []
-  };
-  function writeU16(out, v){ out.push(v & 0xFF, (v>>8)&0xFF); }
-  function msToTicks(ms){ const t = Math.min(65535, Math.max(0, Math.round(ms/10))); return t; }
-  function servoNameToIndex(name){
-    const m = String(name||'').match(/^S(\d+)$/i);
-    const n = m ? parseInt(m[1],10) : 1;
-    return Math.max(1, Math.min(8, n));
-  }
-  // PITCH 문자열을 note index(0..20)로 단순 매핑
-  function pitchToIdx(p){
-    p = String(p||'C5').toUpperCase().trim();
-    const scale = "CDEFGAB";
-    const m = p.match(/^([A-G])(\d)$/); if(!m) return 7; // C5
-    const si = scale.indexOf(m[1]); const oct = parseInt(m[2],10);
-    const base = (oct===4?0 : (oct===5?7 : 14));
-    const idx = base + si;
-    return Math.max(0, Math.min(20, idx));
-  }
-
-  // 'CMD' 문자열 파서 (실시간 전송 문자열을 바이너리 IL로 변환)
-  function compileCmdString(s, out){
-    s = String(s||'').trim();
-    const tok = s.split(/\s+/);
-    if (tok[0]==='SVS' && tok.length>=4){
-      const srv = servoNameToIndex(tok[1]);
-      const spd = Math.max(0, Math.min(255, parseInt(tok[2],10) || 0));
-      const ang = Math.max(0, Math.min(180, parseInt(tok[3],10) || 0));
-      out.push(OP.SVS, srv, spd, ang);
-      return true;
-    }
-    if (tok[0]==='SV' && tok.length>=3){
-      const srv = servoNameToIndex(tok[1]);
-      const ang = Math.max(0, Math.min(180, parseInt(tok[2],10) || 0));
-      out.push(OP.SV, srv, ang);
-      return true;
-    }
-    if (tok[0]==='M12' && tok.length>=4){
-      const v1 = Math.max(-20, Math.min(20, parseInt(tok[1],10) || 0));
-      const v2 = Math.max(-20, Math.min(20, parseInt(tok[2],10) || 0));
-      const ms = Math.max(0, parseInt(tok[3],10) || 0);
-      out.push(OP.M12, (v1&0xFF), (v2&0xFF)); writeU16(out, msToTicks(ms));
-      return true;
-    }
-    if (tok[0]==='M34' && tok.length>=4){
-      const v3 = Math.max(-20, Math.min(20, parseInt(tok[1],10) || 0));
-      const v4 = Math.max(-20, Math.min(20, parseInt(tok[2],10) || 0));
-      const ms = Math.max(0, parseInt(tok[3],10) || 0);
-      out.push(OP.M34, (v3&0xFF), (v4&0xFF)); writeU16(out, msToTicks(ms));
-      return true;
-    }
-    if (tok[0]==='LED' && tok.length>=3){
-      const ch = Math.max(0, Math.min(8, parseInt(tok[1],10) || 0));
-      const val= Math.max(0, Math.min(20, parseInt(tok[2],10) || 0));
-      out.push(OP.LED, ch, val);
-      return true;
-    }
-    if (tok[0]==='MEL' && tok.length>=4){
-      const note = pitchToIdx(tok[1]);
-      const dur  = Math.max(0, parseInt(tok[2],10) || 0);
-      const wait = Math.max(0, parseInt(tok[3],10) || 0);
-      out.push(OP.MEL, note); writeU16(out, msToTicks(dur)); writeU16(out, msToTicks(wait));
-      return true;
-    }
-    return false;
-  }
-
-  // 프로그램(블록) -> 바이너리 IL
-  function compileToEEPROM(prog){
-    const out = [];
-    const warn = (msg)=>{ try{ log('⚠️ ' + msg); }catch(_){ console.warn(msg); } };
-
-    const compileList = (list, depth=0)=>{
-      for(const ins of list){
-        if (ins.type==='CMD'){
-          compileCmdString(ins.s, out);
-        }
-        else if (ins.type==='W'){
-          const ms = Math.max(0, parseInt(ins.args?.[0],10)||0);
-          out.push(OP.WAIT); writeU16(out, msToTicks(ms));
-        }
-        else if (ins.type==='FOR'){
-          const count = Math.max(0, Math.min(65535, parseInt(ins.count,10)||0));
-          out.push(OP.REP); writeU16(out, count);
-          compileList(ins.body, depth+1);
-          out.push(OP.ENDREP);
-        }
-        else if (ins.type==='LOOP_INF'){
-          out.push(OP.REP); writeU16(out, 65535);
-          compileList(ins.body, depth+1);
-          out.push(OP.ENDREP);
-        }
-        else if (ins.type==='IF' || ins.type==='WAIT_UNTIL' || ins.type==='REPEAT_UNTIL'){
-          warn('IF/WAIT_UNTIL/REPEAT_UNTIL 블록은 EEPROM 실행에서 미지원이므로 업로드에서 건너뜁니다.');
-        }
-        else if (ins.type==='SETVAR'){
-          warn('변수 블록은 EEPROM 실행에서 미지원이므로 업로드에서 건너뜁니다.');
-        }
-      }
-    };
-
-    compileList(prog);
-    out.push(OP.END);
-    return new Uint8Array(out);
-  }
-
-  // HEX 인코딩
-  function toHex(u8){
-    const abc='0123456789ABCDEF';
-    let s=''; for(let i=0;i<u8.length;i++){ const b=u8[i]; s += abc[b>>4] + abc[b&15]; }
-    return s;
-  }
-
-  async function onUploadClick(){
-    try{
-      if (!window.writeChar){ alert('먼저 장치와 연결하세요(USB/블루투스).'); return; }
-
-      const prog = blocksToProgram();
-      if(!prog || !prog.length){ alert('업로드할 블록이 없습니다. "XROBO start" 아래에 스택을 배치하세요.'); return; }
-
-      const bin = compileToEEPROM(prog);
-      if (bin.length > 900){
-        if(!confirm(`업로드 데이터(${bin.length}바이트)가 EEPROM(≈1000바이트)에 근접/초과할 수 있습니다. 계속할까요?`)){
-          return;
-        }
-      }
-
-      log(`⬆️ 업로드 시작: ${bin.length} bytes`);
-      const ok1 = await sendAndWaitRET(`EP_BEGIN ${bin.length}`);
-      if(!ok1){ alert('EP_BEGIN 실패'); return; }
-
-      const CH = 32; // 32 bytes -> hex 64 chars
-      for(let off=0; off<bin.length; off+=CH){
-        const chunk = bin.slice(off, Math.min(off+CH, bin.length));
-        const hex = toHex(chunk);
-        const ok = await sendAndWaitRET(`EP_DATA ${hex}`);
-        if(!ok){ alert('EP_DATA 실패'); return; }
-      }
-
-      const ok2 = await sendAndWaitRET('EP_END');
-      if(!ok2){ alert('EP_END 실패'); return; }
-
-      log('✅ EEPROM 업로드 완료 (전원 인가 후 Start 버튼을 누르면 실행됩니다)');
-      alert('업로드 완료!\n전원을 켠 뒤 보드의 Start 버튼(D2)을 누르면 EEPROM 프로그램이 실행됩니다.');
-    }catch(e){
-      console.error(e);
-      alert('업로드 오류: ' + (e?.message||e));
-    }
-  }
-
-  // 초기화
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', ensureUploadButton);
-  } else {
-    ensureUploadButton();
-  }
-})();
-</script>
-<!-- ==== /EEPROM 업로드 모듈 ==== -->
 
 </body>
 </html>
