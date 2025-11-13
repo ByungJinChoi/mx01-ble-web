@@ -365,35 +365,44 @@
 </style>
 
 
-<style id="xrobo-numpad-style">
-  /* ===== XROBO: 안드로이드용 숫자 패드 (+,-,0~9) ===== */
-  #xrobo-numpad{
-    position: fixed; left: 0; right: 0; bottom: 0;
-    background: #0b0f14; color:#fff;
-    padding: 10px 12px calc(12px + env(safe-area-inset-bottom));
-    border-top:1px solid #1f2937;
-    box-shadow: 0 -10px 24px rgba(0,0,0,.35);
-    display: none; z-index: 100000;
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+<style id="xrobo-numpad-4x4-style">
+  /* ===== XROBO: 4x4 숫자패드(전화기 스타일, 외곽 라인) ===== */
+  #xrobo-kp4x4{
+    position: fixed; left: 0; top: 0; display: none; z-index: 100000;
+    background: #0b0f14;                /* 외곽 배경 */
+    border: 2px solid #000;             /* 외곽 라인 */
+    border-radius: 16px;
+    padding: 12px;
+    box-shadow: 0 16px 46px rgba(0,0,0,.45);
+    user-select: none;
   }
-  #xrobo-numpad.show{ display:block; }
-  #xrobo-numpad .title{
-    font-size: 12px; color:#9ca3af; margin: 0 0 8px 2px;
+  #xrobo-kp4x4.show{ display:block; }
+
+  #xrobo-kp4x4 .grid{
+    display: grid;
+    grid-template-columns: repeat(4, 56px);
+    grid-auto-rows: 56px;
+    gap: 10px;
   }
-  #xrobo-numpad .signs, #xrobo-numpad .grid, #xrobo-numpad .ops{
-    display:grid; gap:10px;
+  #xrobo-kp4x4 button{
+    border: 0; border-radius: 12px;
+    background: #ffffff;
+    color: #111; font-weight: 900; font-size: 20px;
+    box-shadow: 0 4px 14px rgba(0,0,0,.22);
+    cursor: pointer; touch-action: manipulation;
   }
-  #xrobo-numpad .signs{ grid-template-columns: repeat(2, 1fr); margin-bottom: 8px; }
-  #xrobo-numpad .grid{ grid-template-columns: repeat(3, 1fr); }
-  #xrobo-numpad .ops{ grid-template-columns: 2fr 1fr 1fr; margin-top: 8px; }
-  #xrobo-numpad button{
-    height: 48px; border:0; border-radius: 10px; font-weight: 800; font-size: 18px;
-    background:#e5e7eb; color:#111827; box-shadow:0 2px 10px rgba(0,0,0,.15);
+  #xrobo-kp4x4 button:active{ transform: translateY(1px); }
+
+  /* 기능키 스타일 */
+  #xrobo-kp4x4 .op { background: #e6eefc; color: #0b3aa6; font-weight: 800; }
+  #xrobo-kp4x4 .back { background: #111827; color: #fff; font-size: 18px; }
+  #xrobo-kp4x4 .clear { background: #e5e7eb; color: #111827; font-size: 16px; font-weight: 800; }
+
+  /* 작은 폭일 때 자동 축소(모바일 대응) */
+  @media (max-width: 420px){
+    #xrobo-kp4x4 .grid{ grid-template-columns: repeat(4, 48px); grid-auto-rows: 48px; gap: 8px; }
+    #xrobo-kp4x4 button{ border-radius: 10px; font-size: 18px; }
   }
-  #xrobo-numpad button:active{ transform: translateY(1px); }
-  #xrobo-numpad .sign{ background:#f59e0b; color:#fff; }
-  #xrobo-numpad .back{ background:#374151; color:#fff; font-size: 16px; }
-  #xrobo-numpad .ok{ background:#2563eb; color:#fff; }
 </style>
 
 </head>
@@ -2818,197 +2827,257 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
 </script>
 
 
-<script id="xrobo-numpad-script">
+<script id="xrobo-numpad-4x4-script">
 (function(){
   'use strict';
-  // Android에서 블록/서보 입력 시 시스템 키보드 대신 페이지 내 숫자 패드(+,-,0~9)를 띄웁니다.
-  const isAndroid = /Android/i.test(navigator.userAgent||'');
+  let pad = null;
+  let activeInput = null;
+  let rafId = 0;
 
-  // 공통: 숫자 입력 힌트
-  function applyNumericHints(el){
-    try{
-      el.setAttribute('inputmode','numeric');
-      el.setAttribute('pattern','[0-9+\-]*');
-      el.setAttribute('autocomplete','off');
-      el.setAttribute('autocorrect','off');
-      el.setAttribute('autocapitalize','off');
-      el.setAttribute('spellcheck','false');
-    }catch(_){}
-  }
-
-  // 힌트는 모든 OS에 적용(키보드 배열 유도)
-  document.addEventListener('focusin', function(e){
-    const t = e.target;
-    if(!t) return;
-    if(t.classList && t.classList.contains('blocklyHtmlInput')) applyNumericHints(t);
-    if(t.matches && (t.matches('.numbox input[type=number]') || t.matches('.xrobo-dial-num input[type=number]'))) applyNumericHints(t);
-  }, true);
-
-  if(!isAndroid) return; // 안드로이드에서만 패드 표시
-
-  // ===== 숫자 패드 UI =====
   function buildPad(){
-    let pad = document.getElementById('xrobo-numpad');
     if(pad) return pad;
     pad = document.createElement('div');
-    pad.id = 'xrobo-numpad';
-    pad.setAttribute('role','dialog');
-    pad.setAttribute('aria-label','숫자 패드');
-    pad.innerHTML = [
-      '<div class="title">숫자 입력</div>',
-      '<div class="signs">',
-        '<button type="button" class="sign" data-ch="+">+ </button>',
-        '<button type="button" class="sign" data-ch="-">- </button>',
-      '</div>',
-      '<div class="grid grid1"></div>',
-      '<div class="ops">',
-        '<button type="button" class="zero" data-ch="0">0</button>',
-        '<button type="button" class="back">←</button>',
-        '<button type="button" class="ok">확인</button>',
-      '</div>'
-    ].join('');
+    pad.id = 'xrobo-kp4x4';
+    const g = document.createElement('div'); g.className = 'grid';
+    pad.appendChild(g);
     document.body.appendChild(pad);
 
-    const g1 = pad.querySelector('.grid1');
-    ['7','8','9','4','5','6','1','2','3'].forEach(ch=>{
-      const b=document.createElement('button');
-      b.type='button'; b.textContent=ch;
-      b.addEventListener('click', ()=>insertChar(ch));
-      g1.appendChild(b);
+    const layout = [
+      [{t:'1'},{t:'2'},{t:'3'},{t:'←', cls:'back'}],
+      [{t:'4'},{t:'5'},{t:'6'},{t:'C', cls:'clear'}],
+      [{t:'7'},{t:'8'},{t:'9'},{t:'+', cls:'op'}],
+      [{t:'*', cls:'op'},{t:'0'},{t:'/', cls:'op'},{t:'-', cls:'op'}],
+    ];
+    layout.flat().forEach(k=>{
+      const b=document.createElement('button'); b.type='button';
+      b.textContent=k.t; if(k.cls) b.classList.add(k.cls);
+      g.appendChild(b);
     });
-    pad.querySelector('.signs [data-ch="+"]').addEventListener('click', ()=>insertChar('+'));
-    pad.querySelector('.signs [data-ch="-"]').addEventListener('click', ()=>insertChar('-'));
-    pad.querySelector('.zero').addEventListener('click', ()=>insertChar('0'));
-    pad.querySelector('.back').addEventListener('click', backspace);
-    pad.querySelector('.ok').addEventListener('click', commitAndClose);
-    pad.addEventListener('mousedown', e=> e.stopPropagation());
-    pad.addEventListener('touchstart', e=> e.stopPropagation(), {passive:true});
+
+    // Delegate events
+    g.addEventListener('mousedown', e=>{
+      const btn = e.target.closest('button'); if(!btn) return;
+      e.preventDefault(); e.stopPropagation();
+      onPadKey(btn.textContent);
+    }, true);
+    g.addEventListener('touchstart', e=>{
+      const t=e.touches && e.touches[0];
+      const el = t && document.elementFromPoint(t.clientX, t.clientY);
+      const btn = el && el.closest && el.closest('button'); if(!btn) return;
+      e.preventDefault(); e.stopPropagation();
+      onPadKey(btn.textContent);
+    }, {passive:false});
+
     return pad;
   }
 
-  let activeInput = null;
+  /* ========= Safe expression evaluator (integers, + - * / with precedence) ========= */
+  function safeEval(expr){
+    if(typeof expr!=='string') return NaN;
+    expr = expr.replace(/[^0-9+\-*/\s]/g,'').trim();
+    if(!expr) return NaN;
+    const tokens = expr.match(/(\d+|[+\-*/])/g) || [];
+    if(tokens.length===0) return NaN;
+
+    const values = [];
+    const ops = [];
+    let expectNum = true;
+    let unary = null; // '+' | '-'
+
+    function prec(op){ return (op==='*'||op==='/')?2:1; }
+    function apply(){
+      const op = ops.pop(), b = values.pop(), a = values.pop();
+      let r = 0;
+      if(op==='+') r = a + b;
+      else if(op==='-') r = a - b;
+      else if(op==='*') r = a * b;
+      else if(op==='/') r = (b===0)?0:Math.trunc(a / b);
+      values.push(r);
+    }
+
+    for(const tk of tokens){
+      if(/^\d+$/.test(tk)){
+        let v = parseInt(tk,10);
+        if(unary==='-') v = -v;
+        unary = null; values.push(v); expectNum=false;
+      }else{ // operator
+        if(expectNum){
+          if(tk==='+' || tk==='-'){ unary = tk; } // unary
+        }else{
+          while(ops.length && prec(ops[ops.length-1]) >= prec(tk)) apply();
+          ops.push(tk); expectNum = true;
+        }
+      }
+    }
+    while(ops.length) apply();
+    return values.length ? values[0] : NaN;
+  }
+
+  function positionPad(){
+    if(!activeInput || !pad) return;
+    pad.classList.add('show'); // measurable
+    const r = activeInput.getBoundingClientRect();
+    const pw = pad.offsetWidth, ph = pad.offsetHeight;
+    const gap = 8;
+
+    let left = r.right + gap;
+    let top  = r.top;
+
+    // flip to left if overflow right
+    if(left + pw > window.innerWidth - 6){
+      left = r.left - pw - gap;
+    }
+    // keep vertical in viewport
+    if(top + ph > window.innerHeight - 6){
+      top = Math.max(6, window.innerHeight - ph - 6);
+    }
+    if(top < 6) top = 6;
+
+    pad.style.left = left + 'px';
+    pad.style.top  = top  + 'px';
+  }
+  function startFollow(){ cancelAnimationFrame(rafId); const tick=()=>{ if(activeInput){ positionPad(); rafId=requestAnimationFrame(tick);} }; tick(); }
+  function stopFollow(){ cancelAnimationFrame(rafId); rafId=0; }
+
   function openPadFor(input){
     activeInput = input;
-    const pad = buildPad();
-    pad.classList.add('show');
+    buildPad().classList.add('show');
+    positionPad();
+    startFollow();
+    try{
+      input.setAttribute('inputmode','numeric');
+      input.setAttribute('pattern','[0-9+\\-*/]*');
+      input.setAttribute('autocomplete','off');
+      input.setAttribute('autocorrect','off');
+      input.setAttribute('autocapitalize','off');
+      input.setAttribute('spellcheck','false');
+      input.focus();
+    }catch(_){}
+    input.addEventListener('keydown', onKeydown, true);
+    setTimeout(()=>document.addEventListener('mousedown', onOutside, true), 0);
   }
   function closePad(){
-    const pad = document.getElementById('xrobo-numpad');
     if(pad) pad.classList.remove('show');
+    stopFollow();
     if(activeInput){
-      try{ activeInput.removeAttribute('readonly'); }catch(_){}
-      try{ activeInput.blur(); }catch(_){}
+      activeInput.removeEventListener('keydown', onKeydown, true);
     }
+    document.removeEventListener('mousedown', onOutside, true);
     activeInput = null;
   }
-  function dispatch(el, type){ try{ el.dispatchEvent(new Event(type, {bubbles:true})); }catch(_){} }
-  function commitAndClose(){
-    if(!activeInput) return closePad();
-    // blockly 숫자 에디터이면 위젯 닫기
+
+  function commit(){
+    if(!activeInput){ closePad(); return; }
+    const raw = String(activeInput.value || '').trim();
+    let num = safeEval(raw);
+    if(!Number.isFinite(num)){
+      closePad(); return;
+    }
+    // clamp to min/max if any
+    const min = Number(activeInput.getAttribute('min'));
+    const max = Number(activeInput.getAttribute('max'));
+    if(Number.isFinite(min)) num = Math.max(min, num);
+    if(Number.isFinite(max)) num = Math.min(max, num);
+    activeInput.value = String(num);
+
+    try{ activeInput.dispatchEvent(new Event('input', {bubbles:true})); }catch(_){}
+    try{ activeInput.dispatchEvent(new Event('change', {bubbles:true})); }catch(_){}
     try{
-      if(activeInput.classList && activeInput.classList.contains('blocklyHtmlInput') && window.Blockly && Blockly.WidgetDiv && typeof Blockly.WidgetDiv.hide === 'function'){
-        setTimeout(()=>{ try{ Blockly.WidgetDiv.hide(); }catch(_){} closePad(); }, 0);
-        return;
+      if(window.Blockly && Blockly.WidgetDiv && typeof Blockly.WidgetDiv.hide==='function'){
+        Blockly.WidgetDiv.hide();
       }
     }catch(_){}
-    // 일반 입력은 change 발생 + 닫기
-    dispatch(activeInput, 'input');
-    dispatch(activeInput, 'change');
     closePad();
   }
+  function onOutside(e){
+    if(!pad || !pad.classList.contains('show')) return;
+    if(pad.contains(e.target)) return;
+    if(activeInput && e.target === activeInput) return;
+    commit();
+  }
+  function onKeydown(e){
+    if(!activeInput) return;
+    if(e.key === 'Enter'){ e.preventDefault(); commit(); }
+    else if(e.key === 'Escape'){ e.preventDefault(); closePad(); }
+  }
+
   function insertChar(ch){
     if(!activeInput) return;
-    ch = String(ch||'');
-    if(!/^[0-9+\-]$/.test(ch)) return;
-    let v = activeInput.value || '';
-
-    if(ch==='+' || ch==='-'){
-      // 부호는 맨 앞만 유지
-      v = v.replace(/^[+\-]?/, ch);
-      activeInput.value = v;
-      const len = activeInput.value.length;
-      try{ activeInput.setSelectionRange(len, len); }catch(_){}
-      return dispatch(activeInput, 'input');
-    }
-    // 숫자 삽입(캐럿 존중)
-    const start = activeInput.selectionStart ?? v.length;
-    const end   = activeInput.selectionEnd ?? v.length;
-    activeInput.value = v.slice(0, start) + ch + v.slice(end);
-    const pos = start + 1;
+    const v = String(activeInput.value||'');
+    const s = activeInput.selectionStart ?? v.length;
+    const e = activeInput.selectionEnd ?? v.length;
+    activeInput.value = v.slice(0,s) + ch + v.slice(e);
+    const pos = s + ch.length;
     try{ activeInput.setSelectionRange(pos, pos); }catch(_){}
-    dispatch(activeInput, 'input');
+    try{ activeInput.dispatchEvent(new Event('input',{bubbles:true})); }catch(_){}
   }
   function backspace(){
     if(!activeInput) return;
-    const v = activeInput.value || '';
-    let start = activeInput.selectionStart ?? v.length;
-    let end   = activeInput.selectionEnd ?? v.length;
-    if(start === end && start > 0) start -= 1;
-    activeInput.value = v.slice(0, start) + v.slice(end);
-    try{ activeInput.setSelectionRange(start, start); }catch(_){}
-    dispatch(activeInput, 'input');
+    const v = String(activeInput.value||'');
+    let s = activeInput.selectionStart ?? v.length;
+    let e = activeInput.selectionEnd ?? v.length;
+    if(s===e && s>0) s--;
+    activeInput.value = v.slice(0,s) + v.slice(e);
+    try{ activeInput.setSelectionRange(s, s); }catch(_){}
+    try{ activeInput.dispatchEvent(new Event('input',{bubbles:true})); }catch(_){}
+  }
+  function clearAll(){
+    if(!activeInput) return;
+    activeInput.value = '';
+    try{ activeInput.dispatchEvent(new Event('input',{bubbles:true})); }catch(_){}
+    try{ activeInput.focus(); }catch(_){}
   }
 
-  // 대상 입력을 패드 전용으로 준비
-  function prepForPad(el){
-    if(!el || el.__xrobo_numpad_ready) return;
-    el.__xrobo_numpad_ready = true;
-    applyNumericHints(el);
-    el.setAttribute('inputmode','none');
-    el.setAttribute('readonly','readonly');
-    // 포커스/클릭/터치 시 패드 오픈
-    const open = (ev)=>{ try{ ev.preventDefault(); ev.stopPropagation(); }catch(_){} openPadFor(el); };
-    el.addEventListener('focus', open);
-    el.addEventListener('click', open);
-    el.addEventListener('touchstart', open, {passive:false});
+  function onPadKey(label){
+    if(label === 'C'){ clearAll(); return; }
+    if(label === '←'){ backspace(); return; }
+    const ch = String(label);
+    if(/^[0-9+\-*/]$/.test(ch)){ insertChar(ch); }
   }
 
-  // 1) Blockly 숫자 필드 전용 패치
+  // Patch Blockly FieldNumber to open the pad
   function patchFieldNumber(){
     try{
       if(!window.Blockly || !Blockly.FieldNumber) return;
-      if(Blockly.FieldNumber.__xrobo_patched) return;
-      const origShow = Blockly.FieldNumber.prototype.showEditor_;
-      Blockly.FieldNumber.prototype.showEditor_ = function(){
-        const rv = origShow ? origShow.apply(this, arguments) : undefined;
-        const input = Blockly.FieldTextInput && Blockly.FieldTextInput.htmlInput_;
-        if(input){
-          prepForPad(input);
-          // 커서 끝으로 이동
-          try{ const n=input.value.length; input.setSelectionRange(n, n); }catch(_){}
-          // 즉시 열기
-          setTimeout(()=> openPadFor(input), 0);
-          // 블러 시 닫기
-          const onBlur = ()=>{ closePad(); input.removeEventListener('blur', onBlur); };
-          input.addEventListener('blur', onBlur, {once:true});
-        }
-        return rv;
-      };
-      Blockly.FieldNumber.__xrobo_patched = true;
+      if(Blockly.FieldNumber.__xrobo_pad44_patched) return;
+
+      function wrap(name){
+        const orig = Blockly.FieldNumber.prototype[name];
+        if(!orig) return false;
+        Blockly.FieldNumber.prototype[name] = function(){
+          const rv = orig.apply(this, arguments);
+          setTimeout(()=>{
+            const input = (Blockly.FieldTextInput && Blockly.FieldTextInput.htmlInput_) || null;
+            if(input){
+              openPadFor(input);
+              const onBlur = ()=>{ try{ commit(); }catch(_){ closePad(); } input.removeEventListener('blur', onBlur); };
+              input.addEventListener('blur', onBlur);
+            }
+          }, 0);
+          return rv;
+        };
+        return true;
+      }
+      wrap('showEditor_') || wrap('showEditor');
+      Blockly.FieldNumber.__xrobo_pad44_patched = true;
     }catch(_){}
   }
 
-  // 2) 멀티 서보/인라인 다이얼의 숫자 입력에도 적용(이벤트 위임)
-  function delegateForUnitAndDial(){
-    const sel = '.numbox input[type=number], .xrobo-dial-num input[type=number]';
-    function handler(e){
-      const t = e.target && e.target.closest && e.target.closest(sel);
-      if(!t) return;
-      prepForPad(t);
-      try{ e.preventDefault(); e.stopPropagation(); }catch(_){}
+  // Fallback: focus on blocklyHtmlInput
+  document.addEventListener('focusin', function(e){
+    const t = e.target;
+    if(t && t.classList && t.classList.contains('blocklyHtmlInput')){
       openPadFor(t);
+      const onBlur = ()=>{ try{ commit(); }catch(_){ closePad(); } t.removeEventListener('blur', onBlur); };
+      t.addEventListener('blur', onBlur);
     }
-    document.addEventListener('click', handler, true);
-    document.addEventListener('touchstart', handler, {capture:true, passive:false});
-  }
+  }, true);
 
   if(document.readyState === 'complete' || document.readyState === 'interactive'){
-    patchFieldNumber(); delegateForUnitAndDial();
+    patchFieldNumber();
   }else{
-    window.addEventListener('DOMContentLoaded', ()=>{ patchFieldNumber(); delegateForUnitAndDial(); });
+    window.addEventListener('DOMContentLoaded', patchFieldNumber);
   }
-  // 혹시 늦게 로드되는 경우를 위해 재시도
-  setTimeout(patchFieldNumber, 800);
 })();
 </script>
 
