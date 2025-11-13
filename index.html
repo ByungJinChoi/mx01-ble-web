@@ -365,31 +365,38 @@
 </style>
 
 
-<style id="xrobo-kp4x4-v9-style">
-  /* ===== XROBO: 4x4 숫자패드(전화기 스타일, 외곽 라인) ===== */
-  #xrobo-kp4x4-v9{
-    position:absolute; left:0; top:0; display:none; z-index:100000;
+<style id="xrobo-kp4x4-v11-style">
+  /* 4x4 키패드 (전화패드 스타일 + 외곽 라인) */
+  #xrobo-kp4x4-v11{
+    position:absolute; left:0; top:0; display:none; z-index:2147483647;
     background:#000; border:2px solid #000; border-radius:16px;
     padding:12px; box-shadow:0 16px 46px rgba(0,0,0,.45);
-    user-select:none;
+    user-select:none; touch-action:manipulation;
   }
-  #xrobo-kp4x4-v9.show{ display:block; }
-  #xrobo-kp4x4-v9 .grid{
+  #xrobo-kp4x4-v11.show{ display:block; }
+  #xrobo-kp4x4-v11 .display{
+    margin-bottom:10px; background:#0b0f14; color:#e5e7eb;
+    border:1px solid #1f2937; border-radius:10px; padding:10px 12px;
+    font-weight:800; font-size:18px; letter-spacing:.6px; min-height:24px;
+  }
+  #xrobo-kp4x4-v11 .grid{
     display:grid; grid-template-columns:repeat(4,56px); grid-auto-rows:56px; gap:10px;
   }
-  #xrobo-kp4x4-v9 button{
-    border:0; border-radius:12px; background:#fff; color:#111;
-    font-weight:900; font-size:20px; box-shadow:0 4px 14px rgba(0,0,0,.22);
-    cursor:pointer; touch-action:manipulation;
+  #xrobo-kp4x4-v11 button{
+    border:0; border-radius:12px; background:#fff; color:#111; font-weight:900; font-size:20px;
+    box-shadow:0 4px 14px rgba(0,0,0,.22); cursor:pointer;
   }
-  #xrobo-kp4x4-v9 button:active{ transform: translateY(1px); }
-  #xrobo-kp4x4-v9 .op{ background:#e6eefc; color:#0b3aa6; font-weight:800; }
-  #xrobo-kp4x4-v9 .back{ background:#111827; color:#fff; font-size:18px; }
-  #xrobo-kp4x4-v9 .clear{ background:#e5e7eb; color:#111827; font-size:16px; font-weight:800; }
-
+  #xrobo-kp4x4-v11 button:active{ transform:translateY(1px); }
+  #xrobo-kp4x4-v11 .op{ background:#e6eefc; color:#0b3aa6; font-weight:800; }
+  #xrobo-kp4x4-v11 .back{ background:#111827; color:#fff; font-size:18px; }
+  #xrobo-kp4x4-v11 .clear{ background:#e5e7eb; color:#111827; font-size:16px; font-weight:800; }
+  #xrobo-kp4x4-v11 .wide{ grid-column: span 2; height:56px; font-size:18px; font-weight:800; }
+  #xrobo-kp4x4-v11 .ok{ background:#2563eb; color:#fff; }
+  #xrobo-kp4x4-v11 .cancel{ background:#6b7280; color:#fff; }
   @media (max-width:420px){
-    #xrobo-kp4x4-v9 .grid{ grid-template-columns:repeat(4,48px); grid-auto-rows:48px; gap:8px; }
-    #xrobo-kp4x4-v9 button{ font-size:18px; border-radius:10px; }
+    #xrobo-kp4x4-v11 .grid{ grid-template-columns:repeat(4,48px); grid-auto-rows:48px; gap:8px; }
+    #xrobo-kp4x4-v11 button{ border-radius:10px; font-size:18px; }
+    #xrobo-kp4x4-v11 .wide{ height:48px; }
   }
 </style>
 
@@ -2815,17 +2822,20 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
 </script>
 
 
-<script id="xrobo-kp4x4-v9-script">
+<script id="xrobo-kp4x4-v11-script">
 (function(){
   'use strict';
   const isAndroid = /Android/i.test(navigator.userAgent||'');
-  let pad=null, activeInput=null, activeField=null, rafId=0;
-  let lastPoint={x:window.innerWidth/2, y:140};
-  let buffer='';
-  let promptCallback=null;
 
-  /* ========= util ========= */
-  function clamp(n,min,max){ n=Number(n); if(!Number.isFinite(n)) return 0; return Math.max(min, Math.min(max, n)); }
+  let pad, disp, grid;
+  let activeInput = null;     // html input (inline editor)
+  let activeField = null;     // Blockly field instance (if we captured it)
+  let promptCallback = null;  // when intercepting Blockly.prompt
+  let buffer = '';
+  let rafId = 0;
+  let lastAnchor = {x: window.innerWidth/2, y: 140};
+
+  /* ===== util ===== */
   function safeEval(expr){
     if(typeof expr!=='string') return NaN;
     expr = expr.replace(/[^0-9+\-*/\s]/g,'').trim();
@@ -2849,113 +2859,137 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
   }
   function dispatch(el, type){ try{ el.dispatchEvent(new Event(type, {bubbles:true})); }catch(_){ } }
 
-  /* ========= keypad ========= */
+  /* ===== keypad UI ===== */
   function buildPad(){
     if(pad) return pad;
     pad = document.createElement('div');
-    pad.id = 'xrobo-kp4x4-v9';
-    const g = document.createElement('div'); g.className='grid';
-    pad.appendChild(g);
+    pad.id = 'xrobo-kp4x4-v11';
+    pad.innerHTML = '<div class="display"></div><div class="grid" role="group" aria-label="숫자패드"></div>';
     document.body.appendChild(pad);
+    disp = pad.querySelector('.display'); grid = pad.querySelector('.grid');
+
     const layout = [
-      [{t:'1'},{t:'2'},{t:'3'},{t:'←', cls:'back'}],
-      [{t:'4'},{t:'5'},{t:'6'},{t:'C', cls:'clear'}],
-      [{t:'7'},{t:'8'},{t:'9'},{t:'+', cls:'op'}],
-      [{t:'*', cls:'op'},{t:'0'},{t:'/', cls:'op'},{t:'-', cls:'op'}],
+      {t:'1'},{t:'2'},{t:'3'},{t:'←',cls:'back'},
+      {t:'4'},{t:'5'},{t:'6'},{t:'C',cls:'clear'},
+      {t:'7'},{t:'8'},{t:'9'},{t:'+',cls:'op'},
+      {t:'*',cls:'op'},{t:'0'},{t:'/',cls:'op'},{t:'-',cls:'op'},
+      {t:'취소',cls:'wide cancel'},{t:'확인',cls:'wide ok'}
     ];
-    layout.flat().forEach(k=>{
-      const b=document.createElement('button'); b.type='button'; b.textContent=k.t; if(k.cls) b.classList.add(k.cls); g.appendChild(b);
+    layout.forEach(k=>{
+      const b=document.createElement('button'); b.type='button'; b.textContent=k.t;
+      if(k.cls) k.cls.split(' ').forEach(c=>b.classList.add(c));
+      grid.appendChild(b);
     });
-    g.addEventListener('mousedown', e=>{ const btn=e.target.closest('button'); if(!btn) return; e.preventDefault(); e.stopPropagation(); onKey(btn.textContent); }, true);
-    g.addEventListener('touchstart', e=>{
-      const t=e.touches && e.touches[0]; const el=t && document.elementFromPoint(t.clientX, t.clientY);
-      const btn=el && el.closest && el.closest('button'); if(!btn) return; e.preventDefault(); e.stopPropagation(); onKey(btn.textContent);
-    }, {passive:false});
+
+    const press = (label)=>{
+      if(label==='확인'){ commit(); return; }
+      if(label==='취소'){ cancel(); return; }
+      if(label==='C'){ buffer=''; sync(); return; }
+      if(label==='←'){ buffer = buffer.slice(0, buffer.length-1); sync(); return; }
+      if(/^[0-9+\-*/]$/.test(label)){ buffer += label; sync(); return; }
+    };
+
+    const onGrid = (e)=>{
+      const btn = e.target.closest('button'); if(!btn) return;
+      e.preventDefault(); e.stopPropagation();
+      press(btn.textContent);
+    };
+    grid.addEventListener('pointerdown', onGrid, true);
+    grid.addEventListener('mousedown', onGrid, true);
+    grid.addEventListener('touchstart', onGrid, {passive:false, capture:true});
+
+    // outside tap/click closes
+    const outside = (e)=>{
+      if(!pad.classList.contains('show')) return;
+      if(pad.contains(e.target)) return;
+      commit();
+    };
+    setTimeout(()=>{
+      document.addEventListener('pointerdown', outside, true);
+      document.addEventListener('touchstart', outside, {passive:false, capture:true});
+      document.addEventListener('mousedown', outside, true);
+    },0);
+
     return pad;
   }
+
   function showPad(){ buildPad().classList.add('show'); }
   function hidePad(){ if(pad) pad.classList.remove('show'); }
 
-  function placePadRect(rect){
-    if(!pad) return;
-    const pw=pad.offsetWidth, ph=pad.offsetHeight, gap=8;
-    const vx=window.scrollX||window.pageXOffset||0, vy=window.scrollY||window.pageYOffset||0;
-    let left=rect.right+gap+vx, top=rect.top+vy;
-    if(left+pw > vx+window.innerWidth-6) left = rect.left+vx - pw - gap;
-    if(top+ph > vy+window.innerHeight-6) top = Math.max(vy+6, (vy+window.innerHeight)-ph-6);
-    if(top < vy+6) top = vy+6;
-    pad.style.left=left+'px'; pad.style.top=top+'px';
+  function positionNearRect(r){
+    const pw=pad.offsetWidth, ph=pad.offsetHeight;
+    const gap=8, vx=window.scrollX||0, vy=window.scrollY||0;
+    let left=r.right + gap + vx, top=r.top + vy;
+    if(left + pw > vx + innerWidth - 6){ left = r.left + vx - pw - gap; }
+    if(top + ph > vy + innerHeight - 6){ top = Math.max(vy+6, vy + innerHeight - ph - 6); }
+    if(top < vy + 6) top = vy + 6;
+    pad.style.left = left + 'px'; pad.style.top = top + 'px';
   }
-  function placePadNearInput(input){ const r=input.getBoundingClientRect(); placePadRect(r); }
-  function placePadNearPoint(x,y){ const rect={left:x, right:x, top:y, bottom:y, width:0, height:0}; placePadRect(rect); }
-  function startFollowInput(input){ cancelAnimationFrame(rafId); const tick=()=>{ if(activeInput){ placePadNearInput(input); rafId=requestAnimationFrame(tick);} }; tick(); }
+  function positionNearInput(input){ positionNearRect(input.getBoundingClientRect()); }
+  function positionNearPoint(x,y){ positionNearRect({left:x, right:x, top:y, bottom:y, width:0, height:0}); }
+
+  function startFollowInput(input){
+    cancelAnimationFrame(rafId);
+    const tick=()=>{ if(activeInput){ positionNearInput(input); rafId=requestAnimationFrame(tick);} };
+    tick();
+  }
   function stopFollow(){ cancelAnimationFrame(rafId); rafId=0; }
 
-  function insertAtInput(ch){
-    const v=String(activeInput.value||''); const s=activeInput.selectionStart ?? v.length; const e=activeInput.selectionEnd ?? v.length;
-    activeInput.value = v.slice(0,s) + ch + v.slice(e);
-    const pos = s + ch.length; try{ activeInput.setSelectionRange(pos,pos); }catch(_){}
-    dispatch(activeInput,'input');
-  }
-  function backspaceInput(){
-    const v=String(activeInput.value||''); let s=activeInput.selectionStart ?? v.length; let e=activeInput.selectionEnd ?? v.length;
-    if(s===e && s>0) s--;
-    activeInput.value = v.slice(0,s) + v.slice(e);
-    try{ activeInput.setSelectionRange(s,s); }catch(_){}
-    dispatch(activeInput,'input');
-  }
-
-  function onKey(label){
+  function sync(){
+    if(disp) disp.textContent = buffer;
     if(activeInput){
-      if(label==='C'){ activeInput.value=''; dispatch(activeInput,'input'); return; }
-      if(label==='←'){ backspaceInput(); return; }
-      if(/^[0-9+\-*/]$/.test(label)){ insertAtInput(label); return; }
-      return;
+      activeInput.value = buffer;
+      dispatch(activeInput,'input');
     }
-    // prompt-mode buffer
-    if(label==='C'){ buffer=''; return; }
-    if(label==='←'){ buffer = buffer.slice(0, buffer.length-1); return; }
-    if(/^[0-9+\-*/]$/.test(label)){ buffer += label; return; }
   }
 
-  function commitFromInput(){
-    if(!activeInput){ hidePad(); return; }
-    // Evaluate if expression
-    const raw = String(activeInput.value||'').trim();
-    const min = Number(activeInput.getAttribute('min'));
-    const max = Number(activeInput.getAttribute('max'));
-    let num = safeEval(raw);
-    if(!Number.isFinite(num)){ hidePad(); return; }
+  function evaluateAndClamp(raw, inputEl){
+    let num = safeEval(String(raw||'').trim());
+    if(!Number.isFinite(num)) return { ok:false, val:String(raw||'') };
+    const min = Number(inputEl?.getAttribute('min'));
+    const max = Number(inputEl?.getAttribute('max'));
     if(Number.isFinite(min)) num = Math.max(min, num);
     if(Number.isFinite(max)) num = Math.min(max, num);
-    activeInput.value = String(num);
-    dispatch(activeInput,'input'); dispatch(activeInput,'change');
-    try{ if(window.Blockly && Blockly.WidgetDiv && typeof Blockly.WidgetDiv.hide==='function'){ Blockly.WidgetDiv.hide(); } }catch(_){}
-    activeInput = null; stopFollow(); hidePad();
-  }
-  function commitFromPrompt(){
-    if(typeof promptCallback!=='function'){ hidePad(); return; }
-    const n = safeEval(buffer); const s = Number.isFinite(n) ? String(n) : (buffer||'');
-    try{ promptCallback(s); }catch(_){}
-    promptCallback = null; hidePad();
+    return { ok:true, val:String(num) };
   }
 
-  document.addEventListener('mousedown', function(e){
-    if(!pad || !pad.classList.contains('show')) return;
-    if(pad.contains(e.target)) return;
-    if(activeInput && e.target===activeInput) return;
-    if(activeInput) commitFromInput(); else commitFromPrompt();
-  }, true);
+  function commit(){
+    // prefer field.setValue if available
+    if(activeField){
+      const { ok, val } = evaluateAndClamp(buffer, activeInput);
+      try{ activeField.setValue(ok ? val : buffer); }catch(_){}
+      activeField = null;
+    }else if(typeof promptCallback === 'function'){
+      const n = safeEval(buffer); const v = Number.isFinite(n) ? String(n) : buffer;
+      try{ promptCallback(v); }catch(_){}
+      promptCallback = null;
+    }else if(activeInput){
+      const { ok, val } = evaluateAndClamp(buffer, activeInput);
+      activeInput.value = val;
+      dispatch(activeInput,'input');
+      dispatch(activeInput,'change');
+      try{ if(window.Blockly && Blockly.WidgetDiv && typeof Blockly.WidgetDiv.hide==='function'){ Blockly.WidgetDiv.hide(); } }catch(_){}
+      activeInput = null;
+    }
+    stopFollow(); hidePad();
+  }
 
-  /* ========= Android keyboard suppression for html input ========= */
-  function setupHtmlInput(input){
+  function cancel(){
+    activeField = null; promptCallback = null; activeInput = null;
+    stopFollow(); hidePad();
+  }
+
+  /* ===== openers ===== */
+  function setupInputPlatform(input){
     if(isAndroid){
-      input.setAttribute('readonly','readonly');
+      input.setAttribute('readonly', 'readonly');
       input.setAttribute('inputmode','none');
-      input.addEventListener('touchstart', function(ev){ ev.preventDefault(); ev.stopPropagation(); }, {capture:true, passive:false});
+      input.addEventListener('touchstart', ev=>{ ev.preventDefault(); ev.stopPropagation(); }, {capture:true, passive:false});
       setTimeout(()=>{ try{ input.blur(); }catch(_){ } }, 0);
     }else{
-      input.removeAttribute('readonly'); input.setAttribute('inputmode','numeric');
+      input.removeAttribute('readonly');
+      input.setAttribute('inputmode','numeric');
+      try{ input.focus(); }catch(_){}
     }
     input.setAttribute('pattern','[0-9+\\-*/]*');
     input.setAttribute('autocomplete','off');
@@ -2964,123 +2998,122 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     input.setAttribute('spellcheck','false');
   }
 
-  /* ========= Openers ========= */
-  function openForInput(input){
-    activeInput = input; activeField = null;
-    setupHtmlInput(input);
-    showPad(); placePadNearInput(input); startFollowInput(input);
-  }
-  function openForPrompt(initial, anchorPoint){
-    activeInput = null; activeField = null; buffer = String(initial||'');
-    showPad(); placePadNearPoint(anchorPoint.x, anchorPoint.y);
+  function openForInput(input, field){
+    activeInput = input; activeField = field || null; promptCallback = null;
+    setupInputPlatform(input);
+    buffer = String(input.value||'');
+    showPad(); positionNearInput(input); startFollowInput(input); sync();
   }
 
-  /* ========= Patches ========= */
-  function patchPreventPrompt(){
-    try{
-      if(!window.Blockly || !Blockly.FieldTextInput) return;
-      if(Blockly.FieldTextInput.__xrobo_force_inline_v9) return;
-      const proto = Blockly.FieldTextInput.prototype;
-      const inline = proto.showInlineEditor_ || proto.widgetCreate_;
-      if(inline){
-        // Replace mobile prompt path with inline editor
-        const origShow = proto.showEditor_;
-        proto.showEditor_ = function(opt_e){
-          // Always use inline editor, then our keypad takes over
-          try{
-            if(proto.widgetCreate_) proto.widgetCreate_.call(this);
-            else if(proto.showInlineEditor_) proto.showInlineEditor_.call(this, opt_e);
-            else if(origShow) origShow.call(this, opt_e);
-          }catch(_){
-            if(origShow) origShow.call(this, opt_e);
-          }
-        };
-        // If a build still calls showPromptEditor_, redirect it
-        if(typeof proto.showPromptEditor_ === 'function'){
-          const origPrompt = proto.showPromptEditor_;
-          proto.showPromptEditor_ = function(){
-            // Force inline creation instead of native prompt
-            try{
-              if(proto.widgetCreate_) return proto.widgetCreate_.call(this);
-              if(proto.showInlineEditor_) return proto.showInlineEditor_.call(this);
-            }catch(_){}
-            return origPrompt.apply(this, arguments);
-          };
-        }
-      }
-      Blockly.FieldTextInput.__xrobo_force_inline_v9 = true;
-    }catch(_){}
+  function openForPrompt(defVal, anchor){
+    activeInput = null; activeField = null; promptCallback = promptCallback || null;
+    buffer = String(defVal||'');
+    showPad(); positionNearPoint(anchor.x, anchor.y); sync();
   }
 
+  /* ===== hooks ===== */
+
+  // 1) Ensure keypad opens for FieldNumber inline editor
   function patchFieldNumber(){
     try{
       if(!window.Blockly || !Blockly.FieldNumber) return;
-      if(Blockly.FieldNumber.__xrobo_np_v9) return;
-      const wrap = (name)=>{
+      if(Blockly.FieldNumber.__xrobo_v11) return;
+      function wrap(name){
         const orig = Blockly.FieldNumber.prototype[name];
         if(!orig) return false;
         Blockly.FieldNumber.prototype[name] = function(){
           const rv = orig.apply(this, arguments);
+          const self = this;
           setTimeout(()=>{
             const input = (Blockly.FieldTextInput && Blockly.FieldTextInput.htmlInput_) || null;
             if(input){
-              openForInput(input);
-              const onBlur = ()=>{ try{ commitFromInput(); }catch(_){ hidePad(); } input.removeEventListener('blur', onBlur); };
+              openForInput(input, self);
+              input.addEventListener('keydown', function(e){
+                if(e.key==='Enter'){ e.preventDefault(); commit(); }
+                else if(e.key==='Escape'){ e.preventDefault(); cancel(); }
+              }, true);
+              // blur → commit
+              const onBlur=()=>{ try{ commit(); }catch(_){ cancel(); } input.removeEventListener('blur', onBlur); };
               input.addEventListener('blur', onBlur);
-              input.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); commitFromInput(); } else if(e.key==='Escape'){ e.preventDefault(); hidePad(); } }, true);
             }
           }, 0);
           return rv;
         };
         return true;
-      };
+      }
       wrap('showEditor_') || wrap('showEditor');
-      Blockly.FieldNumber.__xrobo_np_v9 = true;
+      Blockly.FieldNumber.__xrobo_v11 = true;
     }catch(_){}
   }
 
-  // Capture tap point to anchor keypad when prompt-style editing is attempted
-  (function(){
-    const root = document.getElementById('blocklyDiv') || document.body;
-    root.addEventListener('mousedown', (e)=>{ lastPoint={x:e.clientX, y:e.clientY}; }, true);
-    root.addEventListener('touchstart', (e)=>{ if(e.touches && e.touches[0]){ lastPoint={x:e.touches[0].clientX, y:e.touches[0].clientY}; } }, {capture:true, passive:true});
-  })();
-
-  // Override Blockly.prompt / dialog prompt to our keypad (for old builds that still use prompt)
-  function patchBlocklyPrompt(){
+  // 2) If Blockly uses prompt on mobile, intercept it (numeric only)
+  function patchPrompt(){
     try{
       if(!window.Blockly) return;
-      // dialog API (newer builds)
-      if(Blockly.dialog && typeof Blockly.dialog.setPrompt === 'function'){
-        Blockly.dialog.setPrompt(function(message, defaultValue, callback){
-          promptCallback = function(val){ try{ callback(val); }catch(_){} };
-          openForPrompt(defaultValue, lastPoint);
+      const useDialog = Blockly.dialog && typeof Blockly.dialog.setPrompt==='function';
+      const numLike = v => /^[\s]*[+\-]?\d+(?:[\s]*[+\-*/][\s]*[+\-]?\d+)*[\s]*$/.test(String(v||''));
+      if(useDialog && !Blockly.dialog.__xrobo_v11){
+        Blockly.dialog.setPrompt(function(msg, defVal, cb){
+          const looksNumeric = numLike(defVal) || /value|값|number|숫자/i.test(String(msg||''));
+          if(looksNumeric){
+            promptCallback = v => { try{ cb(v); }catch(_){}};
+            openForPrompt(defVal, lastAnchor);
+          }else{
+            const ans = window.prompt(String(msg||''), String(defVal||''));
+            try{ cb(ans); }catch(_){}
+          }
         });
+        Blockly.dialog.__xrobo_v11=true;
+      }else{
+        // legacy
+        if(!Blockly.__xrobo_prompt_v11){
+          const old = Blockly.prompt;
+          Blockly.prompt = function(message, defaultValue, callback){
+            const looksNumeric = numLike(defaultValue) || /value|값|number|숫자/i.test(String(message||''));
+            if(looksNumeric){
+              promptCallback = v=>{ try{ callback(v); }catch(_){}};
+              openForPrompt(defaultValue, lastAnchor);
+            }else{
+              return old ? old.apply(this, arguments) : window.prompt(message, defaultValue);
+            }
+          };
+          Blockly.__xrobo_prompt_v11 = true;
+        }
       }
-      // legacy API
-      const oldPrompt = Blockly.prompt;
-      Blockly.prompt = function(message, defaultValue, callback){
-        promptCallback = function(val){ try{ callback(val); }catch(_){} };
-        openForPrompt(defaultValue, lastPoint);
-      };
     }catch(_){}
   }
 
-  // Fallback: if any html input is focused (blocklyHtmlInput), open the pad
+  // 3) Fallback: whenever the hidden html input gains focus, open keypad (works on PC)
   document.addEventListener('focusin', function(e){
     const t = e.target;
     if(t && t.classList && t.classList.contains('blocklyHtmlInput')){
-      openForInput(t);
-      const onBlur = ()=>{ try{ commitFromInput(); }catch(_){ hidePad(); } t.removeEventListener('blur', onBlur); };
-      t.addEventListener('blur', onBlur);
+      // Try best to find the field instance from Blockly (may be available via selected)
+      let fld = null;
+      try{
+        const sel = Blockly && Blockly.mainWorkspace && Blockly.mainWorkspace.getSelected && Blockly.mainWorkspace.getSelected();
+        fld = sel && sel.getField && sel.getField(t.getAttribute('data-argumentType')||'NUM'); // heuristic; often null
+      }catch(_){}
+      openForInput(t, fld);
     }
   }, true);
 
+  // track last pointer point to anchor keypad for prompt-style
+  (function(){
+    const root = document.getElementById('blocklyDiv') || document.body;
+    root.addEventListener('pointerdown', (e)=>{ lastAnchor={x:e.clientX, y:e.clientY}; }, true);
+    root.addEventListener('touchstart', (e)=>{ if(e.touches&&e.touches[0]) lastAnchor={x:e.touches[0].clientX, y:e.touches[0].clientY}; }, {capture:true, passive:true});
+  })();
+
+  // Patch as soon as Blockly is ready; also re-try a few times in case of late load.
+  function tryPatch(){ try{ patchFieldNumber(); patchPrompt(); }catch(_){ } }
   if(document.readyState==='complete' || document.readyState==='interactive'){
-    patchPreventPrompt(); patchFieldNumber(); patchBlocklyPrompt();
+    tryPatch();
   }else{
-    window.addEventListener('DOMContentLoaded', function(){ patchPreventPrompt(); patchFieldNumber(); patchBlocklyPrompt(); });
+    window.addEventListener('DOMContentLoaded', tryPatch);
   }
+  let tries = 0;
+  const iv = setInterval(()=>{ tryPatch(); if(++tries>10) clearInterval(iv); }, 300);
+
 })();
 </script>
 
