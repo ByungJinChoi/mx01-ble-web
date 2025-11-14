@@ -3326,6 +3326,19 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
       openForInput(t, null);
       const onBlur = ()=>{ try{ commit(); }catch(_){ cancel(); } t.removeEventListener('blur', onBlur); };
       t.addEventListener('blur', onBlur);
+    } else {
+      // Android 전용: 멀티서보 모달 내부 지연(speed) 입력에도 커스텀 숫자패드 연결
+      try{
+        const uaOk = /Android/i.test(navigator.userAgent||'');
+        if(uaOk && t.matches('#servoModal .speedbox input, #boardStage .speedbox input')){
+          // 기본 키보드가 뜨지 않도록 잠시 readonly 후 해제 + inputmode 힌트
+          try{ t.setAttribute('inputmode','none'); t.setAttribute('autocomplete','off'); t.setAttribute('autocorrect','off'); }catch(_){}
+          try{ t.setAttribute('readonly','readonly'); setTimeout(()=>{ try{ t.removeAttribute('readonly'); }catch(_){ } }, 0); }catch(_){}
+          openForInput(t, null);
+          const onBlur = ()=>{ try{ commit(); }catch(_){ cancel(); } t.removeEventListener('blur', onBlur); };
+          t.addEventListener('blur', onBlur);
+        }
+      }catch(_){}
     }
   }, true);
 
