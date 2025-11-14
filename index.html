@@ -432,6 +432,29 @@
   font-size: 12px; color:#4b5563;
 }
 </style>
+
+<!-- XROBO patch: smaller dropdown arrows to not overlap numbers (multi-servo) -->
+<style id="xrobo-dropdown-arrow-fix">
+/* Make select arrows smaller and add padding so they don't cover digits */
+.speedbox select,
+.sno-select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  /* tiny chevron via inline SVG */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 6'%3E%3Cpath fill='%236b7280' d='M0 0l4 6 4-6z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+  background-size: 8px 6px; /* ↓ smaller arrow */
+  padding-right: 16px !important; /* ← keep text away from arrow */
+  line-height: 1.2;
+}
+/* Keep container from clipping the custom arrow */
+.speedbox { position: relative; overflow: visible; }
+/* In case some browsers insist on native arrow, shrink its area */
+.speedbox select::-ms-expand,
+.sno-select::-ms-expand { display: none; }
+</style>
 </head>
 <body>
   <!-- 헤더 -->
@@ -1267,7 +1290,6 @@ function setRealtime(on){
   realTime=!!on;
   btnRt.classList.toggle('on', realTime);
   btnRt.textContent = realTime ? '실시간: ON' : '실시간: OFF';
-  try{ document.dispatchEvent(new CustomEvent('xrobo-rt-changed',{detail:{on:realTime}})); }catch(_){}
 }
 btnRt.addEventListener('click', ()=>{
   setRealtime(!realTime);
@@ -2342,7 +2364,7 @@ function openSingleServoDialByOut(outName, initAngle){
     const dot = pop.querySelector('.xrobo-dial-dot');
     const closeBtn = pop.querySelector('.xrobo-dial-close');
     const liveBtn = pop.querySelector('.xrobo-live-toggle');
-let live = (typeof realTime!=='undefined'? !!realTime : true);
+let live = false;
 function updateLiveBtn(){
   liveBtn.textContent = live ? 'ON' : 'OFF';
   liveBtn.classList.toggle('on',  live);
@@ -2351,13 +2373,6 @@ function updateLiveBtn(){
   liveBtn.title = live ? 'ON' : 'OFF';
 }
 updateLiveBtn();
-// 헤더의 실시간 토글과 동기화
-try{
-  document.addEventListener('xrobo-rt-changed', function(e){
-    if(!e) return; live = !!(e.detail && e.detail.on); updateLiveBtn();
-  });
-}catch(_){}
-
 liveBtn.addEventListener('click', function(){
   live = !live;
   updateLiveBtn();
