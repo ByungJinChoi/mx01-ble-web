@@ -366,30 +366,51 @@
 
 
 <style id="xrobo-kp4x4-v9-style">
-  /* ===== XROBO: 4x4 숫자패드(전화기 스타일, 외곽 라인) ===== */
+  /* ===== XROBO: 4x4 숫자패드 (외곽 라인 + 70% 축소) ===== */
+  :root { --xroboKpScale: .7; }
   #xrobo-kp4x4-v9{
-    position:absolute; left:0; top:0; display:none; z-index:100000;
-    background:#000; border:2px solid #000; border-radius:16px;
-    padding:12px; box-shadow:0 16px 46px rgba(0,0,0,.45);
-    user-select:none;
+    position:absolute; left:0; top:0; display:none; z-index:2147483647;
+    background:#000; border:2px solid #000; border-radius:calc(16px * var(--xroboKpScale));
+    padding:calc(12px * var(--xroboKpScale));
+    box-shadow:0 16px 46px rgba(0,0,0,.45);
+    user-select:none; touch-action:manipulation; pointer-events:auto;
   }
   #xrobo-kp4x4-v9.show{ display:block; }
+  #xrobo-kp4x4-v9 .display{
+    margin-bottom:calc(10px * var(--xroboKpScale)); background:#0b0f14; color:#e5e7eb;
+    border:1px solid #1f2937; border-radius:calc(10px * var(--xroboKpScale));
+    padding:calc(10px * var(--xroboKpScale)) calc(12px * var(--xroboKpScale));
+    font-weight:800; font-size:calc(18px * var(--xroboKpScale)); letter-spacing:.6px; min-height:24px;
+    display:none; /* Android에서만 표시 */
+  }
+  #xrobo-kp4x4-v9.android .display{ display:block; }
   #xrobo-kp4x4-v9 .grid{
-    display:grid; grid-template-columns:repeat(4,56px); grid-auto-rows:56px; gap:10px;
+    display:grid;
+    grid-template-columns: repeat(4, calc(56px * var(--xroboKpScale)));
+    grid-auto-rows: calc(56px * var(--xroboKpScale));
+    gap: calc(10px * var(--xroboKpScale));
   }
   #xrobo-kp4x4-v9 button{
-    border:0; border-radius:12px; background:#fff; color:#111;
-    font-weight:900; font-size:20px; box-shadow:0 4px 14px rgba(0,0,0,.22);
-    cursor:pointer; touch-action:manipulation;
+    border:0; border-radius:calc(12px * var(--xroboKpScale)); background:#fff; color:#111;
+    font-weight:900; font-size:calc(20px * var(--xroboKpScale));
+    box-shadow:0 calc(4px * var(--xroboKpScale)) calc(14px * var(--xroboKpScale)) rgba(0,0,0,.22);
+    cursor:pointer;
   }
   #xrobo-kp4x4-v9 button:active{ transform: translateY(1px); }
   #xrobo-kp4x4-v9 .op{ background:#e6eefc; color:#0b3aa6; font-weight:800; }
-  #xrobo-kp4x4-v9 .back{ background:#111827; color:#fff; font-size:18px; }
-  #xrobo-kp4x4-v9 .clear{ background:#e5e7eb; color:#111827; font-size:16px; font-weight:800; }
+  #xrobo-kp4x4-v9 .back{ background:#111827; color:#fff; font-size:calc(18px * var(--xroboKpScale)); }
+  #xrobo-kp4x4-v9 .clear{ background:#e5e7eb; color:#111827; font-size:calc(16px * var(--xroboKpScale)); font-weight:800; }
+  #xrobo-kp4x4-v9 .wide{ grid-column: span 2; height:calc(56px * var(--xroboKpScale)); font-size:calc(18px * var(--xroboKpScale)); font-weight:800; }
+  #xrobo-kp4x4-v9 .ok{ background:#2563eb; color:#fff; }
+  #xrobo-kp4x4-v9 .cancel{ background:#6b7280; color:#fff; }
 
   @media (max-width:420px){
-    #xrobo-kp4x4-v9 .grid{ grid-template-columns:repeat(4,48px); grid-auto-rows:48px; gap:8px; }
-    #xrobo-kp4x4-v9 button{ font-size:18px; border-radius:10px; }
+    #xrobo-kp4x4-v9 .grid{
+      grid-template-columns: repeat(4, calc(48px * var(--xroboKpScale)));
+      grid-auto-rows: calc(48px * var(--xroboKpScale));
+      gap: calc(8px * var(--xroboKpScale));
+    }
+    #xrobo-kp4x4-v9 button{ font-size:calc(18px * var(--xroboKpScale)); border-radius:calc(10px * var(--xroboKpScale)); }
   }
 </style>
 
@@ -2819,10 +2840,18 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
 (function(){
   'use strict';
   const isAndroid = /Android/i.test(navigator.userAgent||'');
-  let pad=null, activeInput=null, activeField=null, rafId=0;
+  const hasPointer = 'PointerEvent' in window;
+
+  let pad=null, disp=null, grid=null;
+  let activeInput=null, activeField=null, rafId=0;
   let lastPoint={x:window.innerWidth/2, y:140};
   let buffer='';
   let promptCallback=null;
+  let outsideBound=false;
+
+  // Android 일부 기기에서 이중 입력 방지
+  let lastPressLabel=''; let lastPressTime=0;
+  const PRESS_DEBOUNCE_MS = 160;
 
   /* ========= util ========= */
   function clamp(n,min,max){ n=Number(n); if(!Number.isFinite(n)) return 0; return Math.max(min, Math.min(max, n)); }
@@ -2854,25 +2883,92 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     if(pad) return pad;
     pad = document.createElement('div');
     pad.id = 'xrobo-kp4x4-v9';
-    const g = document.createElement('div'); g.className='grid';
-    pad.appendChild(g);
+    pad.className = isAndroid ? 'android' : '';
+    // display 영역(안드로이드에서만 보임)
+    const display = document.createElement('div'); display.className = 'display';
+    pad.appendChild(display); disp = display;
+    const g = document.createElement('div'); g.className='grid'; pad.appendChild(g); grid = g;
     document.body.appendChild(pad);
-    const layout = [
-      [{t:'1'},{t:'2'},{t:'3'},{t:'←', cls:'back'}],
-      [{t:'4'},{t:'5'},{t:'6'},{t:'C', cls:'clear'}],
-      [{t:'7'},{t:'8'},{t:'9'},{t:'+', cls:'op'}],
-      [{t:'*', cls:'op'},{t:'0'},{t:'/', cls:'op'},{t:'-', cls:'op'}],
+
+    // 기본 4x4
+    const base = [
+      {t:'1'},{t:'2'},{t:'3'},{t:'←',cls:'back'},
+      {t:'4'},{t:'5'},{t:'6'},{t:'C',cls:'clear'},
+      {t:'7'},{t:'8'},{t:'9'},{t:'+',cls:'op'},
+      {t:'*',cls:'op'},{t:'0'},{t:'/',cls:'op'},{t:'-',cls:'op'}
     ];
-    layout.flat().forEach(k=>{
-      const b=document.createElement('button'); b.type='button'; b.textContent=k.t; if(k.cls) b.classList.add(k.cls); g.appendChild(b);
+    // 안드로이드에서는 확인/취소 버튼 추가(2칸 폭)
+    const layout = isAndroid ? base.concat([{t:'확인',cls:'wide ok'},{t:'취소',cls:'wide cancel'}]) : base;
+
+    layout.forEach(k=>{
+      const b=document.createElement('button');
+      b.type='button'; b.textContent=k.t;
+      if(k.cls) k.cls.split(' ').forEach(c=>b.classList.add(c));
+      grid.appendChild(b);
     });
-    g.addEventListener('mousedown', e=>{ const btn=e.target.closest('button'); if(!btn) return; e.preventDefault(); e.stopPropagation(); onKey(btn.textContent); }, true);
-    g.addEventListener('touchstart', e=>{
-      const t=e.touches && e.touches[0]; const el=t && document.elementFromPoint(t.clientX, t.clientY);
-      const btn=el && el.closest && el.closest('button'); if(!btn) return; e.preventDefault(); e.stopPropagation(); onKey(btn.textContent);
-    }, {passive:false});
+
+    function getButtonFromEvent(e){
+      if(e.type==='touchstart' && e.touches && e.touches[0]){
+        const t=e.touches[0]; const el=document.elementFromPoint(t.clientX, t.clientY);
+        return el && el.closest && el.closest('button');
+      }
+      return e.target && e.target.closest && e.target.closest('button');
+    }
+
+    function press(label){
+      const now = performance.now();
+      if(label === lastPressLabel && (now - lastPressTime) < PRESS_DEBOUNCE_MS){ return; }
+      lastPressLabel = label; lastPressTime = now;
+
+      if(isAndroid){
+        if(label==='확인'){ commit(); return; }
+        if(label==='취소'){ cancel(); return; }
+      }
+      if(label==='C'){ buffer=''; sync(); return; }
+      if(label==='←'){ backspace(); return; }
+      if(/^[0-9+\-*/]$/.test(label)){ append(label); return; }
+    }
+
+    const onPress = (e)=>{
+      const btn = getButtonFromEvent(e); if(!btn) return;
+      e.preventDefault(); e.stopPropagation();
+      press(btn.textContent);
+    };
+
+    // 단일 경로로 포인터/터치/마우스 처리 (중복 방지)
+    if(!grid.dataset.bound){
+      if(hasPointer){
+        grid.addEventListener('pointerdown', onPress, true);
+      }else if('ontouchstart' in window){
+        grid.addEventListener('touchstart', onPress, {passive:false, capture:true});
+      }else{
+        grid.addEventListener('mousedown', onPress, true);
+      }
+      grid.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); }, true);
+      grid.dataset.bound='1';
+    }
+
+    // 바깥 터치 시 닫기 (안드로이드는 확인/취소 대신 바깥 터치도 허용)
+    const outside = (e)=>{
+      if(!pad.classList.contains('show')) return;
+      if(pad.contains(e.target)) return;
+      if(activeInput && e.target===activeInput) return;
+      commit();
+    };
+    if(!outsideBound){
+      if(hasPointer){
+        document.addEventListener('pointerdown', outside, true);
+      }else if('ontouchstart' in window){
+        document.addEventListener('touchstart', outside, {passive:false, capture:true});
+      }else{
+        document.addEventListener('mousedown', outside, true);
+      }
+      outsideBound = true;
+    }
+
     return pad;
   }
+
   function showPad(){ buildPad().classList.add('show'); }
   function hidePad(){ if(pad) pad.classList.remove('show'); }
 
@@ -2887,40 +2983,70 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     pad.style.left=left+'px'; pad.style.top=top+'px';
   }
   function placePadNearInput(input){ const r=input.getBoundingClientRect(); placePadRect(r); }
-  function placePadNearPoint(x,y){ const rect={left:x, right:x, top:y, bottom:y, width:0, height:0}; placePadRect(rect); }
-  function startFollowInput(input){ cancelAnimationFrame(rafId); const tick=()=>{ if(activeInput){ placePadNearInput(input); rafId=requestAnimationFrame(tick);} }; tick(); }
+  function placePadNearPoint(x,y){ placePadRect({left:x,right:x,top:y,bottom:y,width:0,height:0}); }
+  function placePadNearField(field){
+    try{
+      const root = field && field.getClickTarget_ ? field.getClickTarget_() : (field && field.getSvgRoot && field.getSvgRoot());
+      if(root && root.getBoundingClientRect){ placePadRect(root.getBoundingClientRect()); return true; }
+    }catch(_){}
+    return false;
+  }
+
+  function startFollowInput(input){
+    cancelAnimationFrame(rafId);
+    const tick=()=>{ if(activeInput){ placePadNearInput(input); rafId=requestAnimationFrame(tick);} };
+    tick();
+  }
   function stopFollow(){ cancelAnimationFrame(rafId); rafId=0; }
 
-  function insertAtInput(ch){
-    const v=String(activeInput.value||''); const s=activeInput.selectionStart ?? v.length; const e=activeInput.selectionEnd ?? v.length;
-    activeInput.value = v.slice(0,s) + ch + v.slice(e);
-    const pos = s + ch.length; try{ activeInput.setSelectionRange(pos,pos); }catch(_){}
-    dispatch(activeInput,'input');
-  }
-  function backspaceInput(){
-    const v=String(activeInput.value||''); let s=activeInput.selectionStart ?? v.length; let e=activeInput.selectionEnd ?? v.length;
-    if(s===e && s>0) s--;
-    activeInput.value = v.slice(0,s) + v.slice(e);
-    try{ activeInput.setSelectionRange(s,s); }catch(_){}
-    dispatch(activeInput,'input');
+  function sync(){
+    if(disp) disp.textContent = buffer;
+    if(activeInput){
+      activeInput.value = buffer;
+      dispatch(activeInput,'input');
+    }
   }
 
-  function onKey(label){
+  function append(ch){
     if(activeInput){
-      if(label==='C'){ activeInput.value=''; dispatch(activeInput,'input'); return; }
-      if(label==='←'){ backspaceInput(); return; }
-      if(/^[0-9+\-*/]$/.test(label)){ insertAtInput(label); return; }
-      return;
+      const start = activeInput.selectionStart ?? activeInput.value.length;
+      const end = activeInput.selectionEnd ?? activeInput.value.length;
+      const before = activeInput.value.slice(0,start);
+      const after  = activeInput.value.slice(end);
+      activeInput.value = before + ch + after;
+      const pos = start + ch.length;
+      try{ activeInput.setSelectionRange(pos,pos); }catch(_){}
+      dispatch(activeInput,'input');
+    }else{
+      buffer += ch;
     }
-    // prompt-mode buffer
-    if(label==='C'){ buffer=''; return; }
-    if(label==='←'){ buffer = buffer.slice(0, buffer.length-1); return; }
-    if(/^[0-9+\-*/]$/.test(label)){ buffer += label; return; }
+    sync();
+  }
+  function backspace(){
+    if(activeInput){
+      const start = activeInput.selectionStart ?? activeInput.value.length;
+      const end   = activeInput.selectionEnd ?? activeInput.value.length;
+      if(start!==end){
+        const before = activeInput.value.slice(0,start);
+        const after  = activeInput.value.slice(end);
+        activeInput.value = before + after;
+        try{ activeInput.setSelectionRange(start,start); }catch(_){}
+      }else if(start>0){
+        const before = activeInput.value.slice(0,start-1);
+        const after  = activeInput.value.slice(start);
+        activeInput.value = before + after;
+        try{ activeInput.setSelectionRange(start-1,start-1); }catch(_){}
+      }
+      dispatch(activeInput,'input');
+      sync();
+    }else{
+      buffer = buffer.slice(0, buffer.length-1);
+      sync();
+    }
   }
 
   function commitFromInput(){
     if(!activeInput){ hidePad(); return; }
-    // Evaluate if expression
     const raw = String(activeInput.value||'').trim();
     const min = Number(activeInput.getAttribute('min'));
     const max = Number(activeInput.getAttribute('max'));
@@ -2940,12 +3066,16 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     promptCallback = null; hidePad();
   }
 
-  document.addEventListener('mousedown', function(e){
-    if(!pad || !pad.classList.contains('show')) return;
-    if(pad.contains(e.target)) return;
-    if(activeInput && e.target===activeInput) return;
-    if(activeInput) commitFromInput(); else commitFromPrompt();
-  }, true);
+  function commit(){ if(activeInput) commitFromInput(); else commitFromPrompt(); }
+  function cancel(){
+    try{
+      if(activeField && typeof activeField.getValue==='function' && typeof activeField.setValue==='function'){
+        const old = activeField.__xroboInitialValue;
+        if(old!=null) activeField.setValue(old);
+      }
+    }catch(_){}
+    activeInput = null; stopFollow(); hidePad();
+  }
 
   /* ========= Android keyboard suppression for html input ========= */
   function setupHtmlInput(input){
@@ -2968,11 +3098,13 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
   function openForInput(input){
     activeInput = input; activeField = null;
     setupHtmlInput(input);
+    buffer = String(input.value || '');
     showPad(); placePadNearInput(input); startFollowInput(input);
+    sync();
   }
   function openForPrompt(initial, anchorPoint){
     activeInput = null; activeField = null; buffer = String(initial||'');
-    showPad(); placePadNearPoint(anchorPoint.x, anchorPoint.y);
+    showPad(); placePadNearPoint(anchorPoint.x, anchorPoint.y); sync();
   }
 
   /* ========= Patches ========= */
@@ -2983,10 +3115,8 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
       const proto = Blockly.FieldTextInput.prototype;
       const inline = proto.showInlineEditor_ || proto.widgetCreate_;
       if(inline){
-        // Replace mobile prompt path with inline editor
         const origShow = proto.showEditor_;
         proto.showEditor_ = function(opt_e){
-          // Always use inline editor, then our keypad takes over
           try{
             if(proto.widgetCreate_) proto.widgetCreate_.call(this);
             else if(proto.showInlineEditor_) proto.showInlineEditor_.call(this, opt_e);
@@ -2995,11 +3125,9 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
             if(origShow) origShow.call(this, opt_e);
           }
         };
-        // If a build still calls showPromptEditor_, redirect it
         if(typeof proto.showPromptEditor_ === 'function'){
           const origPrompt = proto.showPromptEditor_;
           proto.showPromptEditor_ = function(){
-            // Force inline creation instead of native prompt
             try{
               if(proto.widgetCreate_) return proto.widgetCreate_.call(this);
               if(proto.showInlineEditor_) return proto.showInlineEditor_.call(this);
@@ -3021,13 +3149,19 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
         if(!orig) return false;
         Blockly.FieldNumber.prototype[name] = function(){
           const rv = orig.apply(this, arguments);
+          const self = this;
           setTimeout(()=>{
             const input = (Blockly.FieldTextInput && Blockly.FieldTextInput.htmlInput_) || null;
             if(input){
+              // 초기값 저장 (취소 복원용)
+              try{ self.__xroboInitialValue = self.getValue(); }catch(_){}
               openForInput(input);
               const onBlur = ()=>{ try{ commitFromInput(); }catch(_){ hidePad(); } input.removeEventListener('blur', onBlur); };
               input.addEventListener('blur', onBlur);
-              input.addEventListener('keydown', function(e){ if(e.key==='Enter'){ e.preventDefault(); commitFromInput(); } else if(e.key==='Escape'){ e.preventDefault(); hidePad(); } }, true);
+              input.addEventListener('keydown', function(e){
+                if(e.key==='Enter'){ e.preventDefault(); commitFromInput(); }
+                else if(e.key==='Escape'){ e.preventDefault(); cancel(); }
+              }, true);
             }
           }, 0);
           return rv;
@@ -3039,25 +3173,23 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     }catch(_){}
   }
 
-  // Capture tap point to anchor keypad when prompt-style editing is attempted
+  // 터치 지점 기준으로 프롬프트 모드 위치
   (function(){
     const root = document.getElementById('blocklyDiv') || document.body;
     root.addEventListener('mousedown', (e)=>{ lastPoint={x:e.clientX, y:e.clientY}; }, true);
     root.addEventListener('touchstart', (e)=>{ if(e.touches && e.touches[0]){ lastPoint={x:e.touches[0].clientX, y:e.touches[0].clientY}; } }, {capture:true, passive:true});
   })();
 
-  // Override Blockly.prompt / dialog prompt to our keypad (for old builds that still use prompt)
+  // Blockly.prompt를 우리 키패드로 대체
   function patchBlocklyPrompt(){
     try{
       if(!window.Blockly) return;
-      // dialog API (newer builds)
       if(Blockly.dialog && typeof Blockly.dialog.setPrompt === 'function'){
         Blockly.dialog.setPrompt(function(message, defaultValue, callback){
           promptCallback = function(val){ try{ callback(val); }catch(_){} };
           openForPrompt(defaultValue, lastPoint);
         });
       }
-      // legacy API
       const oldPrompt = Blockly.prompt;
       Blockly.prompt = function(message, defaultValue, callback){
         promptCallback = function(val){ try{ callback(val); }catch(_){} };
@@ -3066,7 +3198,9 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
     }catch(_){}
   }
 
-  // Fallback: if any html input is focused (blocklyHtmlInput), open the pad
+  // PC에서 OK -> 0, 취소 복원 문제는 별도 패치 스크립트(xrobo-desktop-number-fix)가 처리
+
+  // 포커스 된 blocklyHtmlInput 자동 캡처
   document.addEventListener('focusin', function(e){
     const t = e.target;
     if(t && t.classList && t.classList.contains('blocklyHtmlInput')){
