@@ -180,6 +180,24 @@
   body.panel-collapsed #left{ flex:1 1 100%; }
 
   /* ───────────── 모달(멀티 서보 설정) ───────────── */
+  /* === modal speedbox (delay) select styling: smaller arrow & spacing === */
+#servoModal .speedbox { position: relative; }
+#servoModal .speedbox select {
+  -webkit-appearance: none; appearance: none;
+  width: calc(100% - 10px); height: 100%;
+  border: 0; outline: none; background: transparent;
+  text-align: center; color: #111827; font-size: calc(12px * var(--servoScale));
+  padding-right: 18px; /* space for arrow */
+}
+#servoModal .speedbox::after{
+  content: '▾';
+  position: absolute;
+  right: 6px; top: 50%; transform: translateY(-50%);
+  font-size: calc(10px * var(--servoScale));
+  color: #6b7280; pointer-events: none;
+}
+
+  
   .modal{ position:fixed; inset:0; display:none; align-items:center; justify-content:center;
           background:rgba(0,0,0,.45); z-index:10000; }
   .modal.show{ display:flex; }
@@ -431,29 +449,6 @@
   pointer-events: none;
   font-size: 12px; color:#4b5563;
 }
-</style>
-
-<!-- XROBO patch: smaller dropdown arrows to not overlap numbers (multi-servo) -->
-<style id="xrobo-dropdown-arrow-fix">
-/* Make select arrows smaller and add padding so they don't cover digits */
-.speedbox select,
-.sno-select {
-  -webkit-appearance: none;
-  -moz-appearance: none;
-  appearance: none;
-  /* tiny chevron via inline SVG */
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 8 6'%3E%3Cpath fill='%236b7280' d='M0 0l4 6 4-6z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-  background-size: 8px 6px; /* ↓ smaller arrow */
-  padding-right: 16px !important; /* ← keep text away from arrow */
-  line-height: 1.2;
-}
-/* Keep container from clipping the custom arrow */
-.speedbox { position: relative; overflow: visible; }
-/* In case some browsers insist on native arrow, shrink its area */
-.speedbox select::-ms-expand,
-.sno-select::-ms-expand { display: none; }
 </style>
 </head>
 <body>
@@ -1599,7 +1594,12 @@ handle.appendChild(pwrTop); unit.appendChild(handle);
   const inp = document.createElement('input'); inp.type='number'; inp.min='0'; inp.max='180'; inp.step='1'; inp.value=String(clampAng180(state.angle ?? 90)); inp.title='서보 각도(0~180°)';
   num.appendChild(inp);
   const spdBox = document.createElement('div'); spdBox.className='speedbox';
-  const spdSel = document.createElement('input'); spdSel.type='number'; spdSel.inputMode='numeric'; spdSel.pattern='[0-9]*'; spdSel.min='0'; spdSel.max='20'; spdSel.step='1'; spdSel.value = String(Math.max(0, Math.min(20, (state.speed ?? 10)))); spdSel.title='이동 속도(0~20: 클수록 빠름)'; spdSel.addEventListener('input', rtMarkDirty); spdBox.appendChild(spdSel);
+const spdSel = document.createElement('select');
+for(let i=0;i<=20;i++){ const o=document.createElement('option'); o.value=String(i); o.textContent=String(i); spdSel.appendChild(o); }
+spdSel.value = String(Math.max(0, Math.min(20, (state.speed ?? 0))));
+spdSel.title='이동 속도(0~20: 클수록 빠름)';
+spdSel.addEventListener('change', rtMarkDirty);
+spdBox.appendChild(spdSel);
 row.append(num, spdBox); unit.appendChild(row);
 
   const svgNS='http://www.w3.org/2000/svg';
