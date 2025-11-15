@@ -2,7 +2,7 @@
 <html lang="ko">
 <head>
 <meta charset="utf-8" />
-<title>XROBO LIVE CODING</title>
+<title>XROBO BLE</title>
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <script src="https://unpkg.com/blockly/blockly.min.js">// 안전 바인딩: 기존 바인딩이 없을 때만 연결
 (function(){
@@ -450,12 +450,35 @@
   font-size: 12px; color:#4b5563;
 }
 </style>
+
+<style id="single-change-hide-handle">
+  #panelHandle { display: none !important; }
+</style>
+
+
+<style id="xrobo-hsplit-style">
+  :root{ --rightW: 40%; } /* initial right width */
+  /* central vertical bar */
+  #hResizer{
+    flex: 0 0 8px;
+    background: linear-gradient(90deg,#e5e7eb,#d1d5db);
+    border-left: 1px solid #cbd5e1;
+    border-right: 1px solid #cbd5e1;
+    cursor: col-resize;
+    touch-action: none;
+    margin: 8px 0;
+  }
+  body.hs-resizing, body.hs-resizing *{ cursor: col-resize !important; user-select: none !important; }
+  /* right panel width controlled by CSS var (allow collapse to 0) */
+  #right{ flex: 0 0 var(--rightW) !important; width: var(--rightW) !important; min-width: 0 !important; }
+</style>
+
 </head>
 <body>
   <!-- 헤더 -->
   <header id="appHeader">
     <div id="topbar">
-      <div class="title">XROBO LIVE CODING</div>
+      <div class="title">XROBO BLE</div>
       <div class="spacer"></div>
 
       <!-- 저장/불러오기 버튼 -->
@@ -489,6 +512,7 @@
       <button id="panelHandle" class="open" title="실행창 닫기"></button>
     </div>
 
+    <div id="hResizer" class="hsplit" title="좌우 크기 조절 바"></div>
     <div id="right">
       <div id="rightTop"></div>
       <div id="rightResizer" class="vsplit" title="크기 조절 바"></div>
@@ -3432,7 +3456,87 @@ setTimeout(()=>document.addEventListener('click', closer, true), 0);
 
 })();
 </script>
+
+<script id="xrobo-hsplit-script">
+(function(){
+  var res = document.getElementById('hResizer');
+  var main = document.getElementById('main');
+  var right = document.getElementById('right');
+  if(!res || !main || !right) return;
+
+  var dragging = false;
+  var startX = 0;
+  var startW = 0;
+  var rafId = 0;
+  var maxW = 0;
+
+  function clamp(v, a, b){ return Math.max(a, Math.min(b, v)); }
+
+  function computeMax(){
+    var rect = main.getBoundingClientRect();
+    var barW = res.getBoundingClientRect().width;
+    // Allow full-span: left can shrink to 0 (no minimum), so max right width is container minus bar
+    maxW = Math.max(0, rect.width - barW);
+    return maxW;
+  }
+
+  function onDown(clientX){
+    dragging = true;
+    startX = clientX;
+    startW = right.getBoundingClientRect().width;
+    computeMax();
+    document.body.classList.add('hs-resizing');
+  }
+
+  function applyWidth(newW){
+    // Allow collapse to 0 and expand up to container edge (minus bar)
+    newW = clamp(newW, 0, maxW);
+    document.documentElement.style.setProperty('--rightW', newW + 'px');
+    cancelAnimationFrame(rafId);
+    rafId = requestAnimationFrame(function(){
+      try{ if (window.Blockly && typeof Blockly.svgResize==='function' && window.ws) { Blockly.svgResize(ws); } }catch(e){}
+    });
+  }
+
+  function onMove(clientX){
+    if(!dragging) return;
+    var dx = clientX - startX;
+    // Fix direction: dragging to the RIGHT enlarges LEFT (shrinks right), and vice versa.
+    // So new right width = startW - dx
+    var newW = startW - dx;
+    applyWidth(newW);
+  }
+
+  function onUp(){
+    dragging = false;
+    document.body.classList.remove('hs-resizing');
+  }
+
+  // Mouse
+  res.addEventListener('mousedown', function(e){ e.preventDefault(); onDown(e.clientX); });
+  window.addEventListener('mousemove', function(e){ onMove(e.clientX); });
+  window.addEventListener('mouseup', onUp);
+
+  // Touch
+  res.addEventListener('touchstart', function(e){
+    if(!e.touches || !e.touches[0]) return;
+    e.preventDefault();
+    onDown(e.touches[0].clientX);
+  }, {passive:false});
+  window.addEventListener('touchmove', function(e){
+    if(!e.touches || !e.touches[0]) return;
+    onMove(e.touches[0].clientX);
+  }, {passive:false});
+  window.addEventListener('touchend', onUp);
+
+  // Keep within bounds when window resizes
+  window.addEventListener('resize', function(){
+    var cur = right.getBoundingClientRect().width;
+    var mx = computeMax();
+    if(cur > mx) applyWidth(mx);
+  });
+})();
+</script>
+
 </body>
 </html>
-
-
